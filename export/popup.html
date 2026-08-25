@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { width: 420px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0a0a1a; color: #e0e0e0; padding: 16px; }
+    h1 { font-size: 16px; color: #a78bfa; margin-bottom: 12px; text-align: center; }
+    .status { padding: 8px 12px; border-radius: 8px; margin-bottom: 12px; font-size: 13px; text-align: center; }
+    .status.ok { background: rgba(34,197,94,0.15); color: #4ade80; border: 1px solid rgba(34,197,94,0.3); }
+    .status.err { background: rgba(239,68,68,0.15); color: #f87171; border: 1px solid rgba(239,68,68,0.3); }
+    .status.wait { background: rgba(168,139,250,0.15); color: #a78bfa; border: 1px solid rgba(168,139,250,0.3); }
+    .label-input { width: 100%; padding: 8px 10px; border: 1px solid #333; border-radius: 6px; background: #1a1a2e; color: #e0e0e0; font-size: 13px; margin-bottom: 8px; }
+    .label-input:focus { outline: none; border-color: #a78bfa; }
+    .btn { width: 100%; padding: 10px; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; margin-bottom: 8px; }
+    .btn-primary { background: linear-gradient(135deg, #7c3aed, #a78bfa); color: white; }
+    .btn-primary:hover { opacity: 0.9; }
+    .btn-secondary { background: #1a1a2e; color: #a78bfa; border: 1px solid #a78bfa; }
+    .btn-secondary:hover { background: #2a2a3e; }
+    textarea { width: 100%; height: 80px; padding: 8px; border: 1px solid #333; border-radius: 6px; background: #1a1a2e; color: #e0e0e0; font-size: 11px; font-family: monospace; resize: none; display: none; }
+    .info { font-size: 11px; color: #888; text-align: center; margin-top: 8px; }
+    .cookie-count { font-size: 12px; color: #a78bfa; text-align: center; margin-bottom: 8px; }
+  </style>
+</head>
+<body>
+  <h1>✦ Gen Console Export ✦</h1>
+  <div id="status" class="status wait">Loading...</div>
+  <div id="cookieCount" class="cookie-count" style="display:none;"></div>
+  <input type="text" id="label" class="label-input" placeholder="Account label (misal: rais1986)" />
+  <button id="exportBtn" class="btn btn-primary">Export Cookies</button>
+  <button id="copyBtn" class="btn btn-secondary" style="display:none;">Copy to Clipboard</button>
+  <button id="sendBtn" class="btn btn-secondary" style="display:none;">Send to VPS</button>
+  <textarea id="output" readonly></textarea>
+  <div class="info">Buka gemini.google.com dulu sebelum export</div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

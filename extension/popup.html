@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      width: 340px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #06060b;
+      color: #e0e0e0;
+      padding: 16px;
+    }
+    .header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 14px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid rgba(139, 92, 246, 0.2);
+    }
+    .logo {
+      width: 28px; height: 28px;
+      background: linear-gradient(135deg, #8b5cf6, #06b6d4);
+      border-radius: 6px;
+      display: flex; align-items: center; justify-content: center;
+      font-weight: 800; color: white; font-size: 14px;
+    }
+    .title { font-size: 14px; font-weight: 600; }
+    .subtitle { font-size: 11px; color: #6b7280; }
+    label { display: block; font-size: 11px; color: #9ca3af; margin: 8px 0 3px; font-weight: 500; }
+    input {
+      width: 100%; padding: 7px 10px;
+      background: #111118; border: 1px solid rgba(139, 92, 246, 0.15);
+      border-radius: 6px; color: #e0e0e0; font-size: 12px;
+      font-family: 'JetBrains Mono', monospace;
+    }
+    input:focus { outline: none; border-color: rgba(6, 182, 209, 0.4); }
+    .btn-row { display: flex; gap: 6px; margin-top: 12px; }
+    button {
+      flex: 1; padding: 8px;
+      border: none; border-radius: 6px;
+      font-size: 12px; font-weight: 600;
+      cursor: pointer; transition: opacity .2s;
+    }
+    button:disabled { opacity: 0.5; cursor: default; }
+    .btn-primary { background: linear-gradient(135deg, #8b5cf6, #7c3aed); color: white; }
+    .btn-secondary { background: #1a1a2e; color: #06b6d4; border: 1px solid rgba(6, 182, 209, 0.2); }
+    .status { font-size: 11px; margin-top: 10px; padding: 6px 10px; background: #111118; border-radius: 4px; text-align: center; }
+    .pool-info { font-size: 10px; color: #6b7280; margin-top: 4px; text-align: center; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="logo">G</div>
+    <div>
+      <div class="title">Gen Token Capture</div>
+      <div class="subtitle">gen.azkazamdigital.com</div>
+    </div>
+  </div>
+
+  <label>Account Label</label>
+  <input type="text" id="accountLabel" placeholder="e.g. harmitafbads, account2">
+
+  <label>Proxy URL</label>
+  <input type="text" id="proxyUrl" placeholder="https://gen.azkazamdigital.com/v1/capture-tokens">
+
+  <label>Extension Key</label>
+  <input type="password" id="extKey" placeholder="ext key (same as .env)">
+
+  <div class="btn-row">
+    <button id="save" class="btn-secondary">Save</button>
+    <button id="capture" class="btn-primary">Capture Now</button>
+  </div>
+  <button id="dashboard" class="btn-secondary" style="margin-top:6px;width:100%">Open Dashboard</button>
+
+  <div class="status" id="status">Ready</div>
+  <div class="pool-info" id="poolInfo"></div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

@@ -1,0 +1,24 @@
+# Dependencies
+node_modules/
+
+# Sensitive — JANGAN push ke GitHub
+.env
+.env.*
+token-pool.json
+api-keys.json
+
+# Browser profiles & screenshots
+google-profiles/
+screenshots/
+
+# Test artifacts
+/tmp/
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
