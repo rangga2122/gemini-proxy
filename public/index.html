@@ -190,6 +190,7 @@ select{cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%
 html{color-scheme:dark}[hidden]{display:none!important}body{background:var(--void);font-size:15px}body::before,body::after{display:none}.app-shell{display:grid;grid-template-columns:216px minmax(0,1fr);min-height:100vh}.side-nav{position:sticky;top:0;height:100vh;border-right:1px solid var(--border);background:#101218}.side-brand{padding:20px 16px;border-bottom:1px solid var(--border)}.side-brand strong{display:block;font:700 24px var(--font-display);letter-spacing:.08em}.side-brand span{font:10px var(--font-mono);color:var(--text-dim)}.nav-list{padding:14px 10px;display:grid;gap:3px}.nav-btn{min-height:44px;border:0;border-radius:4px;background:transparent;color:var(--text-dim);display:flex;align-items:center;gap:11px;padding:0 12px;cursor:pointer;font:600 16px var(--font-display);letter-spacing:.06em}.nav-btn svg,.mobile-nav svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.7}.nav-btn:hover,.nav-btn.active{color:var(--text);background:#1a1d24}.nav-btn.active{box-shadow:inset 2px 0 var(--warn)}.main-shell{min-width:0}.topbar{position:sticky;top:0;z-index:30;min-height:62px;padding:0 clamp(14px,4vw,40px);display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border);background:rgba(11,12,15,.96)}.topbar h1{font:700 21px var(--font-display)}.header-status{border-radius:99px;background:#14161b;backdrop-filter:none}.wrap{max-width:1180px;padding:28px clamp(14px,4vw,40px) 90px}.header{display:none}.hero{text-align:left;margin-bottom:22px}.hero h2{font:700 clamp(30px,4vw,40px)/1.05 var(--font-display);color:var(--text);background:none;-webkit-text-fill-color:initial;margin-bottom:8px}.hero p{margin:0;max-width:65ch;color:#b7bec9}.pool-bar,.creds,.simple-key{justify-content:flex-start;margin-bottom:18px}.pool-label{color:#b7bec9}.pool-value{color:var(--warn)}.simple-key #generateKeyBtn{background:var(--warn);border-color:var(--warn);color:#171204}.simple-key #generateKeyBtn:hover{background:#ffc24d;border-color:#ffc24d}.pool-bar,.cred,.card,.mcp-panel,.code-section{background:var(--panel);backdrop-filter:none;box-shadow:none}.cred-copy{width:44px;height:44px;display:grid;place-items:center;padding:0;flex:none}.card{padding:22px}.card::before{display:none}.card-title h3,.mcp-head h2{font-family:var(--font-display);font-size:20px}.card-icon{border-radius:4px;background:#1a1d24!important;color:var(--warn)!important}.input,.textarea,select{background:#0f1116}.btn{border:1px solid var(--border);border-radius:4px;background:#1a1d24;color:var(--text);font-family:var(--font-display);font-size:15px}.btn::before{display:none}.mode-option.active{background:var(--warn);color:#171204}.grid{grid-template-columns:1fr;margin:0}.card{display:none}.card.view-active{display:grid;grid-template-columns:minmax(280px,410px) minmax(0,1fr);gap:0 20px}.card.view-active .card-head,.card.view-active>.card-endpoint,.card.view-active>.card-body{grid-column:1}.card.view-active>.result{grid-column:2;grid-row:1/5;margin-top:0}.result.show{border:1px solid var(--border)}.mcp-panel,.code-section{display:none}.mcp-panel.view-active,.code-section.view-active{display:block}.footer{display:none}.mobile-nav,.more-tray{display:none}.toast{bottom:88px;box-shadow:none}
 @media(max-width:900px){.app-shell{display:block}.side-nav{display:none}.mobile-nav{display:flex;position:fixed;z-index:50;bottom:0;left:0;right:0;min-height:68px;padding-bottom:env(safe-area-inset-bottom);background:#101218;border-top:1px solid var(--border)}.mobile-nav button{flex:1;min-width:0;min-height:56px;border:0;background:transparent;color:var(--text-dim);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;font:600 11px var(--font-display)}.mobile-nav button.active{color:var(--warn);background:#1a1d24}.more-tray.open{display:grid;position:fixed;z-index:49;left:12px;right:12px;bottom:76px;grid-template-columns:repeat(2,1fr);gap:4px;padding:8px;background:#14161b;border:1px solid var(--border);border-radius:6px}.card.view-active{display:block}.card.view-active>.result{margin-top:16px}.mcp-layout{grid-template-columns:1fr}}
 @media(max-width:560px){.wrap{padding-left:14px;padding-right:14px}.card,.mcp-panel{padding:16px}.btn{min-height:44px}.card-body>.btn{width:100%}.pool-bar{display:grid!important;grid-template-columns:1fr 1fr}.creds,.creds .cred,.simple-key,.simple-key .cred{width:100%;min-width:0}.creds .cred,.simple-key .cred{padding:12px}.cred-value{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.simple-key .btn{width:100%}}@media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;animation:none!important}}
+.pool-bar[hidden]{display:none!important}
 </style>
 </head>
 <body>
@@ -224,6 +225,7 @@ html{color-scheme:dark}[hidden]{display:none!important}body{background:var(--voi
   <div class="pool-item"><span class="pool-label">Mode:</span> <span class="pool-value" id="poolMode">—</span></div>
   <div class="pool-item"><span class="pool-label">Captured:</span> <span class="pool-value" id="poolCaptured">—</span></div>
 </div>
+<div class="header-status user-online-status" id="userOnlineStatus" hidden><span class="status-dot" aria-hidden="true"></span><span>GEN Online</span></div>
 
 <!-- Hero -->
 <section class="hero">
@@ -428,10 +430,12 @@ html{color-scheme:dark}[hidden]{display:none!important}body{background:var(--voi
 
 <!-- MCP Connection -->
 <section class="mcp-panel" aria-labelledby="mcpTitle">
+  <div id="mcpContent">
   <div class="mcp-head"><div><h2 id="mcpTitle">MCP CONNECTION</h2><p>Koneksi read-only untuk klien AI yang mendukung Model Context Protocol.</p></div><div class="mcp-status" role="status" aria-live="polite"><span id="mcpStatusDot" class="status-dot loading" aria-hidden="true"></span><span id="mcpStatusText">Memeriksa status…</span></div></div>
   <div class="mcp-layout">
-    <div class="mcp-block"><h3>Endpoint MCP</h3><div class="mcp-endpoint"><code id="mcpEndpoint">https://gen.azkazamdigital.com/mcp</code><button type="button" class="btn secondary" id="copyMcpEndpoint"><span>Salin endpoint</span></button></div><p class="mcp-note">MCP memakai key terpisah untuk setiap pengguna. Minta key pribadi kepada admin; tidak tersedia generator key publik. Panel ini tidak menampilkan secret maupun state layanan.</p><div class="mcp-actions"><button type="button" class="btn" id="copyMcpConfig"><span>Salin konfigurasi JSON</span></button><a class="btn secondary public-admin-link" id="manageUsersLink" href="#adminMcp" hidden><span>Kelola pengguna</span></a></div></div>
+    <div class="mcp-block"><h3>Endpoint MCP</h3><div class="mcp-endpoint"><code id="mcpEndpoint">https://gen.azkazamdigital.com/mcp</code><button type="button" class="btn secondary" id="copyMcpEndpoint"><span>Salin endpoint</span></button></div><p class="mcp-note">MCP memakai key terpisah untuk setiap pengguna. Minta key pribadi kepada admin; tidak tersedia generator key publik. Panel ini tidak menampilkan secret maupun state layanan.</p><div class="mcp-actions"><button type="button" class="btn" id="copyMcpConfig"><span>Salin konfigurasi JSON</span></button></div></div>
     <div class="mcp-block"><h3>8 Tool Tersedia</h3><ul class="mcp-tools"><li><strong>chat_text</strong>Chat dan respons teks</li><li><strong>analyze_image</strong>Analisis konten gambar</li><li><strong>generate_image</strong>Generasi gambar dari teks</li><li><strong>edit_image</strong>Edit gambar dengan instruksi</li><li><strong>generate_audio</strong>Sintesis audio dari teks</li><li><strong>list_voices</strong>Daftar suara tersedia</li><li><strong>get_pool_status</strong>Status pool layanan</li><li><strong>get_service_status</strong>Status kesehatan layanan</li></ul></div>
+  </div>
   </div>
   <div class="admin-shell" id="adminMcp">
     <div class="admin-bar"><div><h3>ADMIN MCP</h3><p>Kelola akses pengguna MCP. Area ini memerlukan autentikasi admin.</p></div><button type="button" class="btn secondary" id="adminToggle" aria-expanded="false" aria-controls="adminArea"><span>Login Admin</span></button></div>
@@ -566,6 +570,9 @@ function navigateView(id, updateHash = true) {
   if (id === 'pengguna' && authSession?.role !== 'admin') id = 'ringkasan';
   document.querySelectorAll('.card,.mcp-panel,.code-section').forEach(el => el.classList.remove('view-active'));
   document.querySelector('.hero').hidden = id !== 'ringkasan'; document.querySelector('.pool-bar').hidden = id !== 'ringkasan' || authSession?.role !== 'admin'; document.querySelector('.creds').hidden = id !== 'ringkasan'; document.querySelector('.simple-key').hidden = true;
+  document.getElementById('userOnlineStatus').hidden = id !== 'ringkasan' || authSession?.role === 'admin';
+  document.getElementById('mcpContent').hidden = id === 'pengguna';
+  document.getElementById('adminMcp').hidden = id !== 'pengguna' || authSession?.role !== 'admin';
   const targets = {gambar:'cardImage',analisis:'cardVision',chat:'cardChat',audio:'cardTTS',mcp:'mcpTitle',pengguna:'adminMcp',dokumentasi:'codeCurl'};
   const target = targets[id] && document.getElementById(targets[id]); if (target) (target.closest('.card,.mcp-panel,.code-section') || target).classList.add('view-active');
   document.querySelectorAll('[data-view]').forEach(b => { const active=b.dataset.view === id; b.classList.toggle('active', active); if(active) b.setAttribute('aria-current','page'); else b.removeAttribute('aria-current'); });
@@ -597,8 +604,8 @@ function showAuthScreen(name) {
 function showDashboard(session, credential='') {
   authSession=session; setApiKey();
   document.getElementById('accountEmail').textContent=session.user?.email||''; document.getElementById('accountRole').textContent=session.role;
-  document.getElementById('keyNotice').classList.remove('show'); document.getElementById('manageUsersLink').hidden=session.role!=='admin';
-  document.querySelector('.simple-key').hidden=true; document.getElementById('adminMcp').hidden=session.role!=='admin';
+  document.getElementById('keyNotice').classList.remove('show');
+  document.querySelector('.simple-key').hidden=true; document.getElementById('userOnlineStatus').hidden=session.role==='admin';
   showAuthScreen('dashboard'); buildNavigation(); init(); if(session.role==='admin'){setAdminState(true); loadUsers().catch(e=>adminMessage(e.message));}
 }
 async function checkSession() { try { const r=await fetch(`${BASE}/auth/session`,{credentials:'include',headers:{Accept:'application/json'}}); const d=await r.json().catch(()=>null); if(r.ok&&d?.authenticated) return showDashboard(d); } catch {} showAuthScreen('public'); }
@@ -797,7 +804,7 @@ async function loadPoolInfo() {
     document.getElementById('poolCaptured').textContent = pool.capturedAgo;
   } catch {}
 }
-setInterval(() => { checkStatus(); loadPoolInfo(); checkMcpStatus(); }, 30000);
+setInterval(() => { checkStatus(); if (authSession?.role === 'admin') loadPoolInfo(); checkMcpStatus(); }, 30000);
 
 // ─── Helpers ────────────────────────────
 function setLoading(btn, loading) {
