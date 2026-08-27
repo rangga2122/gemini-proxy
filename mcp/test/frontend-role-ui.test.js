@@ -38,7 +38,7 @@ test('user owns API key lifecycle through profile endpoints', () => {
   assert.match(html, /API Key Saya/);
   assert.match(html, /fetch\(`\$\{BASE\}\/profile\/api-key`,\s*\{\s*method:\s*'POST',\s*credentials:\s*'include'/);
   assert.match(html, /fetch\(`\$\{BASE\}\/profile\/api-key`,\s*\{\s*method:\s*'DELETE',\s*credentials:\s*'include'/);
-  assert.match(html, /keyState\s*=\s*\{hasApiKey:true,keyId:data\.keyId,keyCreatedAt:data\.createdAt\};\s*renderMyKey\(keyState\);\s*revealRawKey\(data\.key\)/);
+  assert.match(html, /keyState\s*=\s*\{hasApiKey:true,keyId:data\.keyId,keyCreatedAt:data\.createdAt,rpmLimit:data\.rpmLimit\};\s*renderMyKey\(keyState\);\s*revealRawKey\(data\.key\)/);
   assert.match(html, /finally\s*\{\s*setLoading\(btn,\s*false\);\s*if\(keyState\)\s*renderMyKey\(keyState\);\s*\}/);
   assert.doesNotMatch(html, /revealRawKey\(data\.key\);[\s\S]{0,200}loadProfile\(\)/);
   assert.match(html, /key\.startsWith\('cosmic-mcp-'\)/);
@@ -60,6 +60,17 @@ test('admin creation/reset/revoke/delete use password-era contracts', () => {
   assert.match(html, /\/api-key`?,\s*\{\s*method:\s*'DELETE'/);
   assert.match(html, /Hapus Pengguna/);
   assert.doesNotMatch(html, /Nonaktifkan permanen|Rotasi key/);
+});
+
+test('admin configures per-account RPM and sees separated feature totals', () => {
+  assert.match(html, /id="userRpmLimit"[^>]*min="1"[^>]*max="600"[^>]*value="20"/);
+  assert.match(html, /adminFetch\('\/admin\/stats'\)/);
+  assert.match(html, /rpmLimit:\s*data\.rpmLimit/);
+  assert.match(html, /rpmLimit\s*=\s*Number\(rpmInput\.value\)/);
+  for (const id of ['usageOverall', 'usageImages', 'usageImageGenerate', 'usageImageEdit', 'usageVision', 'usageChat', 'usageAudio']) {
+    assert.match(html, new RegExp(`id="${id}"`));
+  }
+  assert.match(html, /Maks\. 1 request aktif/);
 });
 
 test('API response values are rendered through textContent', () => {

@@ -1,3 +1,4 @@
-import test from 'node:test'; import assert from 'node:assert/strict'; import {FixedWindow,Semaphore} from '../lib/limits.js';
+import test from 'node:test'; import assert from 'node:assert/strict'; import {FixedWindow,Semaphore,SingleFlight} from '../lib/limits.js';
 test('fixed window reports retry',()=>{let now=0; const l=new FixedWindow(()=>now); assert.equal(l.take('a',2).ok,true); l.take('a',2); const r=l.take('a',2); assert.equal(r.ok,false); assert.equal(r.retryAfterMs,60000); now=60001; assert.equal(l.take('a',2).ok,true)});
 test('bounded concurrency and queue',async()=>{const s=new Semaphore(1,1); const release=await s.acquire(); const pending=s.acquire(); await assert.rejects(s.acquire(),/busy/); release(); const r2=await pending; r2(); assert.equal(s.active,0)});
+test('single flight allows only one active request per account',()=>{const gate=new SingleFlight(),release=gate.acquire('user:1');assert.equal(typeof release,'function');assert.equal(gate.acquire('user:1'),null);assert.equal(typeof gate.acquire('user:2'),'function');release();assert.equal(typeof gate.acquire('user:1'),'function')});

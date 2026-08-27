@@ -20,6 +20,10 @@ test('dashboard proxy authenticates and forwards only the exact allowlist',async
   const routes=[['POST','images/generations'],['POST','images/variations'],['POST','chat/completions'],['POST','audio/speech'],['GET','tts/voices'],['GET','status']];
   for(const [method,path]of routes){const options={method,headers:{cookie}};if(method==='POST'){options.headers['content-type']='application/json';options.body=JSON.stringify({marker:path})}r=await fetch(`${base}/dashboard/v1/${path}`,options);assert.equal(r.status,200,path);if(path==='audio/speech'){assert.equal(r.headers.get('content-type'),'audio/mpeg');assert.equal(await r.text(),'audio')}else assert.deepEqual(await r.json(),{ok:true,path:`/v1/${path}`})}
   assert.equal(seen.length,6);for(const request of seen)assert.equal(request.auth,'Bearer configured-key');assert.deepEqual(JSON.parse(seen[0].raw),{marker:'images/generations'});assert.equal(seen.at(-1).raw,'');
+  const stats=await (await fetch(base+'/admin/stats',{headers:{cookie}})).json();assert.deepEqual(stats.totals,{imageGenerate:1,imageEdit:1,vision:0,chat:1,audio:1,images:2,overall:4});
+  r=await fetch(base+'/admin/users',{method:'POST',headers:{cookie,'content-type':'application/json'},body:JSON.stringify({email:'limited@example.com',rpmLimit:1})});assert.equal(r.status,201);const made=await r.json();
+  r=await fetch(base+'/auth/login',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({email:'limited@example.com',credential:made.password})});assert.equal(r.status,200);const userCookie=r.headers.get('set-cookie'),options={method:'POST',headers:{cookie:userCookie,'content-type':'application/json'},body:JSON.stringify({prompt:'hello'})};
+  assert.equal((await fetch(base+'/dashboard/v1/chat/completions',options)).status,200);const limited=await fetch(base+'/dashboard/v1/chat/completions',options);assert.equal(limited.status,429);assert.equal(limited.headers.get('x-ratelimit-limit'),'1');
 });
 
 test('dashboard proxy converts malformed input and backend failures safely',async t=>{

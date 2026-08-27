@@ -3,7 +3,8 @@ import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {KeyStore} from './lib/auth.js';
 import {AdminAuth,DashboardAuth,UserStore,normalizeEmail,publicUser,validUserInput} from './lib/admin.js';
-import {FixedWindow} from './lib/limits.js';
+import {FixedWindow,SingleFlight} from './lib/limits.js';
+import {UsageStore} from './lib/usage.js';
 import {ArtifactStore} from './lib/artifacts.js';
 import {GenClient} from './lib/gen-client.js';
 import {createTools} from './lib/tools.js';
@@ -12,17 +13,17 @@ const MAX=12*1024*1024, ADMIN_MAX=64*1024;
 
 export async function createApp(o={}){
   const state=o.stateDir||process.env.MCP_STATE_DIR||join(process.cwd(),'mcp-state'),now=o.now||Date.now;
-  const keys=new KeyStore(join(state,'keys.json')),users=new UserStore(join(state,'users.json'),{now});
+  const keys=new KeyStore(join(state,'keys.json')),users=new UserStore(join(state,'users.json'),{now}),usage=new UsageStore(join(state,'usage.json'));
   const admin=new AdminAuth(join(state,'admin-sessions.json'),{email:o.adminEmail??process.env.ADMIN_EMAIL,salt:o.adminPasswordSalt??process.env.ADMIN_PASSWORD_SALT,hash:o.adminPasswordHash??process.env.ADMIN_PASSWORD_HASH,ttlMs:Number(o.adminSessionTtlMs??process.env.ADMIN_SESSION_TTL_MS??28800000),now});
   const dashboard=new DashboardAuth(join(state,'dashboard-sessions.json'),{users,keys,ttlMs:Number(o.dashboardSessionTtlMs??process.env.DASHBOARD_SESSION_TTL_MS??28800000),now});
   const artifacts=o.artifacts||new ArtifactStore(join(state,'artifacts'));
-  await Promise.all([keys.load(),users.load(),admin.load(),dashboard.load(),artifacts.init()]);
+  await Promise.all([keys.load(),users.load(),usage.load(),admin.load(),dashboard.load(),artifacts.init()]);
   const cleanupIntervalMs=positive(o.artifactCleanupIntervalMs??process.env.ARTIFACT_CLEANUP_INTERVAL_MS,900000);let cleanupRunning=null;
   const cleanup=()=>cleanupRunning||(cleanupRunning=Promise.resolve().then(()=>artifacts.cleanup()).catch(()=>{}).finally(()=>cleanupRunning=null));await cleanup();
   const artifactCleanupTimer=setInterval(cleanup,cleanupIntervalMs);artifactCleanupTimer.unref();
   const gen=new GenClient({baseUrl:o.genUrl||process.env.GEN_URL,apiKey:o.genKey||process.env.GEN_API_KEY});
   const tools=createTools(gen,artifacts,{publicBaseUrl:o.publicBaseUrl||process.env.PUBLIC_BASE_URL||'',limits:o.limits});
-  const rate=new FixedWindow(now,{maxKeys:o.rateLimitMaxKeys||10000}),adminRate=new FixedWindow(now,{maxKeys:10000}),bodyTimeoutMs=positive(o.bodyTimeoutMs??process.env.BODY_TIMEOUT_MS,10000);let closing=false;
+  const rate=new FixedWindow(now,{maxKeys:o.rateLimitMaxKeys||10000}),singleFlight=new SingleFlight(),adminRate=new FixedWindow(now,{maxKeys:10000}),bodyTimeoutMs=positive(o.bodyTimeoutMs??process.env.BODY_TIMEOUT_MS,10000);let closing=false;
   let mutationTail=Promise.resolve();const mutate=fn=>{const run=mutationTail.then(fn,fn);mutationTail=run.catch(()=>{});return run};
   const server=http.createServer(async(req,res)=>{security(res);try{
     const url=new URL(req.url||'/','http://localhost');
@@ -30,19 +31,22 @@ export async function createApp(o={}){
     if(needsAdminBody(req.method,url.pathname)){const parsed=await readAdminJson(req,res,bodyTimeoutMs);if(!parsed.ok)return;req.parsedBody=parsed.value}
     if(url.pathname.startsWith('/auth/'))return await mutate(()=>handleAuth(req,res,url,{admin,dashboard,users,keys,adminRate,now,o}));
     if(url.pathname.startsWith('/profile'))return await mutate(()=>handleProfile(req,res,url,{dashboard,users,keys,adminRate,now,o}));
-    if(url.pathname.startsWith('/dashboard/'))return await handleDashboard(req,res,url,{dashboard,gen});
-    if(url.pathname.startsWith('/admin/'))return await mutate(()=>handleAdmin(req,res,url,{admin,dashboard,users,keys,adminRate,now,o}));
+    if(url.pathname.startsWith('/dashboard/'))return await handleDashboard(req,res,url,{dashboard,users,gen,usage,rate,singleFlight});
+    if(url.pathname.startsWith('/admin/'))return await mutate(()=>handleAdmin(req,res,url,{admin,dashboard,users,keys,usage,adminRate,now,o}));
     const match=url.pathname.match(/^\/artifacts\/([a-f0-9]{32})$/);
     if(req.method==='GET'&&match){const a=await artifacts.get(match[1]);if(!a){res.writeHead(404);return res.end()}res.writeHead(200,{'content-type':a.mime,'cache-control':'private, max-age=60','content-disposition':`attachment; filename="${match[1]}.${extension(a.mime)}"`});return res.end(a.data)}
     if(req.method!=='POST'||url.pathname!=='/mcp'){res.writeHead(404);return res.end()}if(closing){res.writeHead(503);return res.end()}
     const token=bearer(req),record=token&&await keys.authenticate(token);if(!record)return unauthorized(res);
-    if(record.userId){const user=users.get(record.userId);if(!user||!user.active||(user.expiresAt!==null&&Date.parse(user.expiresAt)<=now())||user.keyId!==record.id)return unauthorized(res)}
-    const rl=rate.take(record.id,record.limit||o.rateLimit||30);if(!rl.ok){res.setHeader('retry-after',String(Math.ceil(rl.retryAfterMs/1000)));return json(res,429,{error:'rate limit'})}
-    let query;try{query=JSON.parse(await body(req,MAX))}catch{return json(res,400,{jsonrpc:'2.0',id:null,error:{code:-32700,message:'Parse error'}})}
-    const answer=await dispatch(query,tools);if(answer===null){res.writeHead(202);return res.end()}return json(res,200,answer);
+    let user=null;if(record.userId){user=users.get(record.userId);if(!user||!user.active||(user.expiresAt!==null&&Date.parse(user.expiresAt)<=now())||user.keyId!==record.id)return unauthorized(res)}
+    const actor=record.userId?`user:${record.userId}`:`key:${record.id}`,rpm=user?(user.rpmLimit??20):(record.limit??o.rateLimit??30);
+    const rl=rate.take(actor,rpm);res.setHeader('x-ratelimit-limit',String(rpm));res.setHeader('x-ratelimit-remaining',String(Math.max(0,rl.remaining??0)));if(!rl.ok){res.setHeader('retry-after',String(Math.ceil(rl.retryAfterMs/1000)));return json(res,429,{error:'rate limit',rpmLimit:rpm})}
+    const release=singleFlight.acquire(actor);if(!release){res.setHeader('retry-after','1');return json(res,429,{error:'Only one active API request is allowed per account'})}
+    try{let query;try{query=JSON.parse(await body(req,MAX))}catch{return json(res,400,{jsonrpc:'2.0',id:null,error:{code:-32700,message:'Parse error'}})}
+      const answer=await dispatch(query,tools),feature=mcpFeature(query);if(feature&&answer&&!answer.result?.isError)await usage.record(actor,feature).catch(()=>{});if(answer===null){res.writeHead(202);return res.end()}return json(res,200,answer)
+    }finally{release()}
   }catch{return json(res,500,{error:'Internal error'})}});
-  async function close(){if(closing)return;closing=true;clearInterval(artifactCleanupTimer);await cleanupRunning;tools.close?.();await new Promise(resolve=>server.close(()=>resolve()))}
-  return {server,keys,users,admin,dashboard,artifacts,tools,artifactCleanupTimer,close};
+  async function close(){if(closing)return;closing=true;clearInterval(artifactCleanupTimer);await cleanupRunning;tools.close?.();await new Promise(resolve=>server.close(()=>resolve()));await usage.close()}
+  return {server,keys,users,usage,admin,dashboard,artifacts,tools,rate,singleFlight,artifactCleanupTimer,close};
 }
 
 const DASHBOARD_ROUTES=new Map([
@@ -53,11 +57,13 @@ const DASHBOARD_ROUTES=new Map([
   ['GET /dashboard/v1/tts/voices','/v1/tts/voices'],
   ['GET /dashboard/v1/status','/v1/status']
 ]);
-async function handleDashboard(req,res,url,{dashboard,gen}){
+async function handleDashboard(req,res,url,{dashboard,users,gen,usage,rate,singleFlight}){
   const path=DASHBOARD_ROUTES.get(`${req.method} ${url.pathname}`);if(!path)return notFound(res);
-  if(!await dashboard.validate(sessionCookie(req)))return unauthorized(res);
-  let value; if(req.method==='POST'){try{value=JSON.parse(await body(req,MAX))}catch{return json(res,400,{error:'Invalid request'})}}
-  try{const result=await gen.request(path,{method:req.method,body:value});if(result.json!==undefined)return json(res,200,result.json);res.writeHead(200,{'content-type':result.mime});return res.end(result.data)}catch{return json(res,502,{error:'Backend unavailable'})}
+  const session=await dashboard.validate(sessionCookie(req));if(!session)return unauthorized(res);
+  const actor=session.role==='user'?`user:${session.user.id}`:'admin',rpm=session.role==='user'?(users.get(session.user.id)?.rpmLimit??20):null;
+  let release=null;if(req.method==='POST'&&session.role==='user'){const rl=rate.take(actor,rpm);res.setHeader('x-ratelimit-limit',String(rpm));res.setHeader('x-ratelimit-remaining',String(Math.max(0,rl.remaining??0)));if(!rl.ok){res.setHeader('retry-after',String(Math.ceil(rl.retryAfterMs/1000)));return json(res,429,{error:'rate limit',rpmLimit:rpm})}release=singleFlight.acquire(actor);if(!release){res.setHeader('retry-after','1');return json(res,429,{error:'Only one active API request is allowed per account'})}}
+  let value; if(req.method==='POST'){try{value=JSON.parse(await body(req,MAX))}catch{release?.();return json(res,400,{error:'Invalid request'})}}
+  try{const result=await gen.request(path,{method:req.method,body:value}),feature=dashboardFeature(path,value);if(feature)await usage.record(actor,feature,featureCount(feature,result.json)).catch(()=>{});if(result.json!==undefined)return json(res,200,result.json);res.writeHead(200,{'content-type':result.mime});return res.end(result.data)}catch{return json(res,502,{error:'Backend unavailable'})}finally{release?.()}
 }
 
 async function handleAuth(req,res,url,c){
@@ -81,7 +87,7 @@ async function handleProfile(req,res,url,c){
   if(session.role!=='user')return json(res,403,{error:'Forbidden'});const u=c.users.get(session.user.id);
   const rl=c.adminRate.take(`profile:${u.id}`,Number(c.o.profileRateLimit??30));if(!rl.ok)return json(res,429,{error:'Too many requests'});
   if(req.method==='POST'&&url.pathname==='/profile/password'){const v=req.parsedBody,allowed=['currentPassword','newPassword','confirmPassword'];if(!v||Object.keys(v).length!==3||Object.keys(v).some(k=>!allowed.includes(k))||typeof v.currentPassword!=='string'||typeof v.newPassword!=='string'||typeof v.confirmPassword!=='string'||v.newPassword!==v.confirmPassword||v.newPassword.length<10||v.newPassword.length>1024)return json(res,400,{error:'Invalid request'});if(!c.users.verifyPassword(u,v.currentPassword))return json(res,401,{error:'Invalid credentials'});await c.users.setPassword(u.id,v.newPassword);await c.dashboard.revokeUser(u.id);const token=await c.dashboard.create({role:'user',userId:u.id});res.setHeader('set-cookie',sessionCookieHeader(token));return json(res,200,{changed:true})}
-  if(req.method==='POST'&&url.pathname==='/profile/api-key'){const made=await c.keys.replaceForUser(u.keyId,u.label||u.email,{userId:u.id,email:u.email},{commit:id=>c.users.commitKey(u.id,id),rollback:id=>c.users.restoreKey(u.id,id)});return json(res,201,{key:made.key,keyId:made.id,createdAt:c.keys.records.find(k=>k.id===made.id).createdAt})}
+  if(req.method==='POST'&&url.pathname==='/profile/api-key'){const made=await c.keys.replaceForUser(u.keyId,u.label||u.email,{userId:u.id,email:u.email,limit:u.rpmLimit??20},{commit:id=>c.users.commitKey(u.id,id),rollback:id=>c.users.restoreKey(u.id,id)});return json(res,201,{key:made.key,keyId:made.id,createdAt:c.keys.records.find(k=>k.id===made.id).createdAt,rpmLimit:u.rpmLimit??20})}
   if(req.method==='DELETE'&&url.pathname==='/profile/api-key'){await deleteKey(c,u);res.writeHead(204);return res.end()}
   return notFound(res);
 }
@@ -97,13 +103,14 @@ async function handleAdmin(req,res,url,c){
   const token=bearer(req),legacy=token&&await c.admin.validate(token),session=!legacy&&await c.dashboard.validate(sessionCookie(req));if(!legacy&&!session)return unauthorized(res);if(session&&session.role!=='admin')return json(res,403,{error:'Forbidden'});
   if(req.method==='POST'&&url.pathname==='/admin/logout'){await c.admin.logout(token);res.writeHead(204);return res.end()}
   if(req.method==='GET'&&url.pathname==='/admin/users')return json(res,200,{users:c.users.list()});
+  if(req.method==='GET'&&url.pathname==='/admin/stats')return json(res,200,await c.usage.report(c.users.list()));
   if(req.method==='POST'&&url.pathname==='/admin/users'){
     const value=req.parsedBody;if(!validUserInput(value))return json(res,400,{error:'Invalid request'});
     const result=await c.users.upsert(value);return json(res,result.created?201:200,{user:publicUser(result.user),...(result.password?{password:result.password}:{})});
   }
   const match=url.pathname.match(/^\/admin\/users\/([0-9a-f-]+)(\/(?:reset-password|api-key|rotate))?$/i);if(!match)return notFound(res);const user=c.users.get(match[1]);if(!user)return notFound(res);
   if(req.method==='POST'&&match[2]==='/reset-password'){const result=await c.users.resetPassword(user.id);await c.dashboard.revokeUser(user.id);return json(res,200,{user:publicUser(user),password:result.password})}
-  if(req.method==='POST'&&match[2]==='/rotate'){const made=await c.keys.replaceForUser(user.keyId,user.label||user.email,{userId:user.id,email:user.email},{commit:id=>c.users.commitKey(user.id,id),rollback:id=>c.users.restoreKey(user.id,id)});return json(res,201,{key:made.key,keyId:made.id,createdAt:c.keys.records.find(k=>k.id===made.id).createdAt})}
+  if(req.method==='POST'&&match[2]==='/rotate'){const made=await c.keys.replaceForUser(user.keyId,user.label||user.email,{userId:user.id,email:user.email,limit:user.rpmLimit??20},{commit:id=>c.users.commitKey(user.id,id),rollback:id=>c.users.restoreKey(user.id,id)});return json(res,201,{key:made.key,keyId:made.id,createdAt:c.keys.records.find(k=>k.id===made.id).createdAt,rpmLimit:user.rpmLimit??20})}
   if(req.method==='DELETE'&&match[2]==='/api-key'){await deleteKey(c,user);res.writeHead(204);return res.end()}
   if(req.method==='PATCH'&&!match[2]){const value=req.parsedBody;if(!validUserInput(value,{partial:true}))return json(res,400,{error:'Invalid request'});await c.users.update(user.id,value);return json(res,200,{user:publicUser(user)})}
   if(req.method==='DELETE'&&!match[2]){await hardDelete(c,user.id);res.writeHead(204);return res.end()}
@@ -119,6 +126,9 @@ function sessionCookie(req){const raw=req.headers.cookie;return typeof raw==='st
 function sessionCookieHeader(token,clear=false){return `dashboard_session=${token}; Path=/; HttpOnly; Secure; SameSite=Lax${clear?'; Max-Age=0':''}`}
 function json(res,status,value){res.writeHead(status,{'content-type':'application/json'});res.end(JSON.stringify(value))}function unauthorized(res){return json(res,401,{error:'Unauthorized'})}function notFound(res){res.writeHead(404);res.end()}
 function positive(v,fallback){v=Number(v);return Number.isFinite(v)&&v>0?v:fallback}
+function mcpFeature(query){if(query?.method!=='tools/call')return null;return {generate_image:'imageGenerate',edit_image:'imageEdit',analyze_image:'vision',chat_text:'chat',generate_audio:'audio'}[query.params?.name]||null}
+function dashboardFeature(path,value){if(path==='/v1/images/generations')return'imageGenerate';if(path==='/v1/images/variations')return'imageEdit';if(path==='/v1/audio/speech')return'audio';if(path==='/v1/chat/completions')return value?.referenceImage||value?.image?'vision':'chat';return null}
+function featureCount(feature,value){return feature==='imageGenerate'||feature==='imageEdit'?Math.max(1,Array.isArray(value?.data)?value.data.length:1):1}
 function security(res){res.setHeader('x-content-type-options','nosniff');res.setHeader('referrer-policy','no-referrer');res.setHeader('x-frame-options','DENY');res.setHeader('content-security-policy',"default-src 'none'; frame-ancestors 'none'");res.setHeader('cache-control','no-store')}
 function extension(mime){return {'image/png':'png','image/jpeg':'jpg','image/webp':'webp','audio/mpeg':'mp3','audio/wav':'wav','audio/ogg':'ogg'}[mime]||'bin'}
 if(process.argv[1]===fileURLToPath(import.meta.url)){const app=await createApp(),port=Number(process.env.PORT||3101);app.server.listen(port,process.env.HOST||'127.0.0.1');const stop=async()=>{await app.close();process.exit(0)};process.on('SIGTERM',stop);process.on('SIGINT',stop)}
