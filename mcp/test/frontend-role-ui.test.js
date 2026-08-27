@@ -21,6 +21,7 @@ test('profile is role-aware and an exclusive dashboard view', () => {
   assert.match(html, /\['profil','Profil','profileView'\]/);
   assert.match(html, /id="profileView"/);
   assert.match(html, /profileView'\)\.hidden\s*=\s*id\s*!==\s*'profil'/);
+  assert.match(html, /profil:'profileView'/);
   assert.match(html, /id="userProfileFields"/);
   assert.match(html, /id="adminProfileNote"/);
 });

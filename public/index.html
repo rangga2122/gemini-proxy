@@ -584,7 +584,7 @@ function navigateView(id, updateHash = true) {
   document.getElementById('mcpContent').hidden = id === 'pengguna';
   document.getElementById('adminMcp').hidden = id !== 'pengguna' || authSession?.role !== 'admin';
   document.getElementById('profileView').hidden = id !== 'profil';
-  const targets = {gambar:'cardImage',analisis:'cardVision',chat:'cardChat',audio:'cardTTS',mcp:'mcpTitle',pengguna:'adminMcp',dokumentasi:'codeCurl'};
+  const targets = {gambar:'cardImage',analisis:'cardVision',chat:'cardChat',audio:'cardTTS',mcp:'mcpTitle',profil:'profileView',pengguna:'adminMcp',dokumentasi:'codeCurl'};
   const target = targets[id] && document.getElementById(targets[id]); if (target) (target.closest('.card,.mcp-panel,.code-section') || target).classList.add('view-active');
   document.querySelectorAll('[data-view]').forEach(b => { const active=b.dataset.view === id; b.classList.toggle('active', active); if(active) b.setAttribute('aria-current','page'); else b.removeAttribute('aria-current'); });
   document.getElementById('currentViewTitle').textContent = DASH_VIEWS.find(v => v[0] === id)[1]; document.getElementById('moreTray').classList.remove('open');
