@@ -56,7 +56,8 @@ body::after{content:'';position:fixed;inset:0;background-image:radial-gradient(1
 .pool-value.error{color:var(--error)}
 
 /* Simple API key row */
-.simple-key{display:flex;gap:10px;flex-wrap:wrap;justify-content:center;margin-bottom:48px}
+.simple-key{display:flex;gap:16px;flex-wrap:wrap;align-items:center;justify-content:center;margin-bottom:48px;padding:22px;background:var(--panel);border:1px solid var(--border);border-radius:var(--radius)}
+.simple-key>div:first-child{flex:1 1 240px}
 .simple-key .cred{min-width:min(100%,520px)}
 .simple-key .cred-value{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;user-select:all}
 .simple-key .btn{white-space:nowrap;padding:12px 18px}
@@ -243,7 +244,7 @@ html{color-scheme:dark}[hidden]{display:none!important}body{background:var(--voi
     </button>
   </div>
 </div>
-<section class="simple-key card" id="myApiKey" hidden>
+<section class="simple-key" id="myApiKey" hidden>
   <div><h3>API Key Saya</h3><p class="user-meta" id="myApiKeyMeta">Memuat status key…</p><p class="user-meta">Secret hanya ditampilkan satu kali. Simpan di pengelola password.</p></div>
   <div class="cred">
     <span class="cred-label">API Key</span>
@@ -624,7 +625,7 @@ function showDashboard(session, credential='') {
   showAuthScreen('dashboard'); buildNavigation(); init(); if(session.role==='admin'){setAdminState(true); loadUsers().catch(e=>adminMessage(e.message));}
 }
 function returnToLogin() { clearRawKey(); authSession=null; history.replaceState(null,'',location.pathname); showAuthScreen('login'); }
-function durationId(ms) { if (ms == null) return 'Tidak dibatasi'; return `${Math.max(0,Math.ceil(ms/86400000))} hari tersisa`; }
+function durationId(ms) { if (ms == null) return 'Tidak dibatasi'; if (ms <= 0) return 'Masa aktif telah berakhir'; if (ms < 86400000) return `${Math.ceil(ms/3600000)} jam tersisa`; return `${Math.ceil(ms/86400000)} hari tersisa`; }
 async function loadProfile() {
   clearRawKey();
   try {
@@ -744,7 +745,7 @@ function showSecret(key, email='', title='PASSWORD AWAL') {
 }
 function renderUsers(users) {
   const list = document.getElementById('adminUsers'); list.replaceChildren();
-  if (!users.length) { const p = document.createElement('p'); p.className = 'user-meta'; p.textContent = 'Belum ada pengguna MCP.'; list.append(p); return; }
+  if (!users.length) { const p = document.createElement('p'); p.className = 'user-meta'; p.textContent = 'Belum ada pengguna.'; list.append(p); return; }
   users.forEach(user => {
     const card = document.createElement('article'); card.className = 'user-card';
     const summary = document.createElement('div'); summary.className = 'user-summary';
@@ -778,7 +779,7 @@ document.getElementById('userForm').addEventListener('submit', event => { event.
   const payload = { email, label: document.getElementById('userLabel').value.trim(), expiresAt: toExpiry(document.getElementById('userExpiry').value), maxSessions, active: document.getElementById('userActive').checked };
   const data = await adminFetch('/admin/users', { method: 'POST', body: JSON.stringify(payload) }); event.target.reset(); document.getElementById('userMaxSessions').value = '1'; document.getElementById('userActive').checked = true; adminMessage(data.password ? 'Pengguna dibuat. Simpan password awal sekarang.' : 'Data pengguna diperbarui.', 'info'); await loadUsers(); showSecret(data.password,data.user?.email||email,'PASSWORD AWAL');
 }); });
-document.getElementById('copySecret').addEventListener('click', () => { const key = document.getElementById('secretKey').textContent; if (key) navigator.clipboard.writeText(key).then(() => showToast('Key MCP disalin')).catch(() => showToast('Gagal menyalin key')); });
+document.getElementById('copySecret').addEventListener('click', () => { const secret = document.getElementById('secretKey').textContent; if (secret) navigator.clipboard.writeText(secret).then(() => showToast('Kredensial disalin')).catch(() => showToast('Gagal menyalin kredensial')); });
 document.getElementById('adminLogout').addEventListener('click', () => document.getElementById('accountLogout').click());
 window.addEventListener('hashchange', clearSecret);
 setAdminState(false);
@@ -786,17 +787,20 @@ setAdminState(false);
 async function generateSimpleKey() {
   const btn = document.getElementById('generateKeyBtn');
   if (btn.textContent.includes('Ganti') && !confirm('Mengganti API key akan langsung menonaktifkan key lama. Lanjutkan?')) return;
+  let keyState = null;
   setLoading(btn, true);
   try {
     const r = await fetch(`${BASE}/profile/api-key`, { method: 'POST', credentials: 'include', headers:{Accept:'application/json'} });
     const data = await r.json().catch(()=>null);
     if(r.status===401){returnToLogin();return} if (!r.ok || !data?.key) throw new Error(data?.error || 'Gagal membuat API key');
+    keyState = {hasApiKey:true,keyId:data.keyId,keyCreatedAt:data.createdAt};
+    renderMyKey(keyState);
     revealRawKey(data.key);
-    showToast('API key dibuat. Salin sekarang; key hanya ditampilkan satu kali.'); await loadProfile();
-  } catch (e) { showToast(e.message); } finally { setLoading(btn, false); }
+    showToast('API key dibuat. Salin sekarang; key hanya ditampilkan satu kali.');
+  } catch (e) { showToast(e.message); } finally { setLoading(btn, false); if(keyState) renderMyKey(keyState); }
 }
-async function revokeSimpleKey(){if(!confirm('Cabut API key aktif? Key segera tidak berlaku.'))return;try{const r=await fetch(`${BASE}/profile/api-key`, { method:'DELETE', credentials:'include', headers:{Accept:'application/json'} });if(r.status===401){returnToLogin();return}if(!r.ok)throw new Error('Gagal mencabut API key');document.getElementById('credKey').textContent='Belum dibuat';showToast('API key berhasil dicabut.');await loadProfile();}catch(e){showToast(e.message)}}
-function copyCurrentKey() { const key=document.getElementById('credKey').textContent;if(key&&key!=='Belum dibuat')navigator.clipboard.writeText(key).then(()=>showToast('API key disalin')).catch(()=>showToast('Gagal menyalin')); }
+async function revokeSimpleKey(){if(!confirm('Cabut API key aktif? Key segera tidak berlaku.'))return;try{const r=await fetch(`${BASE}/profile/api-key`, { method:'DELETE', credentials:'include', headers:{Accept:'application/json'} });if(r.status===401){returnToLogin();return}if(!r.ok)throw new Error('Gagal mencabut API key');clearRawKey();document.getElementById('credKey').textContent='Belum dibuat';renderMyKey({hasApiKey:false});showToast('API key berhasil dicabut.');}catch(e){showToast(e.message)}}
+function copyCurrentKey() { const key=document.getElementById('credKey').textContent.trim();if(!key.startsWith('cosmic-mcp-')){showToast('Secret API key hanya tersedia sesaat setelah generate.');return}navigator.clipboard.writeText(key).then(()=>showToast('API key disalin')).catch(()=>showToast('Gagal menyalin')); }
 
 async function checkStatus() {
   const dot = document.getElementById('statusDot');

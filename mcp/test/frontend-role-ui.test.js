@@ -33,9 +33,16 @@ test('login asks for password/passkey and never API key', () => {
 
 test('user owns API key lifecycle through profile endpoints', () => {
   assert.match(html, /id="myApiKey"/);
+  assert.match(html, /class="simple-key" id="myApiKey"/);
+  assert.doesNotMatch(html, /class="simple-key card"/);
   assert.match(html, /API Key Saya/);
   assert.match(html, /fetch\(`\$\{BASE\}\/profile\/api-key`,\s*\{\s*method:\s*'POST',\s*credentials:\s*'include'/);
   assert.match(html, /fetch\(`\$\{BASE\}\/profile\/api-key`,\s*\{\s*method:\s*'DELETE',\s*credentials:\s*'include'/);
+  assert.match(html, /keyState\s*=\s*\{hasApiKey:true,keyId:data\.keyId,keyCreatedAt:data\.createdAt\};\s*renderMyKey\(keyState\);\s*revealRawKey\(data\.key\)/);
+  assert.match(html, /finally\s*\{\s*setLoading\(btn,\s*false\);\s*if\(keyState\)\s*renderMyKey\(keyState\);\s*\}/);
+  assert.doesNotMatch(html, /revealRawKey\(data\.key\);[\s\S]{0,200}loadProfile\(\)/);
+  assert.match(html, /key\.startsWith\('cosmic-mcp-'\)/);
+  assert.match(html, /renderMyKey\(\{hasApiKey:false\}\)/);
   assert.doesNotMatch(html, /(?:localStorage|sessionStorage)/);
 });
 
@@ -48,6 +55,7 @@ test('profile password update validates and sends exact contract', () => {
 
 test('admin creation/reset/revoke/delete use password-era contracts', () => {
   assert.match(html, /PASSWORD AWAL/);
+  assert.match(html, /Kredensial disalin/);
   assert.match(html, /\/reset-password/);
   assert.match(html, /\/api-key`?,\s*\{\s*method:\s*'DELETE'/);
   assert.match(html, /Hapus Pengguna/);
