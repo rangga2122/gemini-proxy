@@ -52,6 +52,9 @@ export class KeyStore {
     this.fileVersion=version(await stat(this.file,{bigint:true}));
   }
 
+  snapshot(){return this.records.map(r=>({...r}))}
+  async restore(snapshot,{persist=true}={}){this.records=snapshot.map(r=>({...r}));if(persist)await this.save()}
+
   async create(label,{limit=30,userId,email}={}) {
     const key='cosmic-mcp-'+randomBytes(24).toString('base64url'),id=randomUUID();
     this.records.push({id,label,hash:createHash('sha256').update(key).digest('hex'),active:true,createdAt:new Date().toISOString(),limit,usage:0,...(userId?{userId,email}:{})});
@@ -76,6 +79,20 @@ export class KeyStore {
     const r=this.records.find(x=>x.id===id);
     if(r) r.active=false;
     await this.save();
+  }
+
+  async replaceForUser(oldId,label,metadata,{commit,rollback}) {
+    const snapshot=this.records.map(r=>({...r}));
+    const key='cosmic-mcp-'+randomBytes(24).toString('base64url'),id=randomUUID();
+    const old=this.records.find(r=>r.id===oldId); if(old) old.active=false;
+    this.records.push({id,label,hash:createHash('sha256').update(key).digest('hex'),active:true,createdAt:new Date().toISOString(),limit:metadata.limit??30,usage:0,...metadata});
+    try { await this.save(); await commit(id); return {key,id}; }
+    catch(error) {
+      try { await rollback(oldId??null); } catch {}
+      this.records=snapshot;
+      try { await this.save(); } catch {}
+      throw error;
+    }
   }
 }
 

@@ -2,56 +2,48 @@ import {createHash,randomBytes,randomUUID,scryptSync,timingSafeEqual} from 'node
 import {mkdir,readFile,rename,writeFile} from 'node:fs/promises';
 import {dirname} from 'node:path';
 
-async function atomic(file,value){
-  await mkdir(dirname(file),{recursive:true,mode:0o700});
-  const tmp=`${file}.${process.pid}.${randomUUID()}.tmp`;
-  await writeFile(tmp,JSON.stringify(value),{mode:0o600});
-  await rename(tmp,file);
-}
+async function atomic(file,value){await mkdir(dirname(file),{recursive:true,mode:0o700});const tmp=`${file}.${process.pid}.${randomUUID()}.tmp`;await writeFile(tmp,JSON.stringify(value),{mode:0o600});await rename(tmp,file)}
 async function load(file){try{const value=JSON.parse(await readFile(file,'utf8'));return Array.isArray(value)?value:[]}catch(e){if(e.code==='ENOENT')return [];throw e}}
 export const normalizeEmail=value=>typeof value==='string'?value.trim().toLowerCase():'';
-const publicUser=u=>({id:u.id,email:u.email,label:u.label,active:u.active,expiresAt:u.expiresAt,maxSessions:u.maxSessions,keyId:u.keyId,createdAt:u.createdAt,updatedAt:u.updatedAt});
+const publicUser=u=>({id:u.id,email:u.email,label:u.label,active:u.active,expiresAt:u.expiresAt,maxSessions:u.maxSessions,keyId:u.keyId??null,createdAt:u.createdAt,updatedAt:u.updatedAt});
+const password=()=>randomBytes(24).toString('base64url');
+function verifier(value){const salt=randomBytes(16).toString('hex');return {passwordSalt:salt,passwordHash:scryptSync(value,salt,32).toString('hex')}}
+function verify(u,value){if(!u?.passwordSalt||!validHex(u.passwordHash))return false;const expected=Buffer.from(u.passwordHash,'hex'),actual=scryptSync(typeof value==='string'?value:'',u.passwordSalt,expected.length);return actual.length===expected.length&&timingSafeEqual(actual,expected)}
 
 export class UserStore{
-  constructor(file,{now=Date.now}={}){this.file=file;this.now=now;this.records=[]}
-  async load(){this.records=await load(this.file)}
-  list(){return this.records.map(publicUser)}
-  get(id){return this.records.find(u=>u.id===id)||null}
-  async upsert(input){
-    const email=normalizeEmail(input.email), stamp=new Date(this.now()).toISOString();let user=this.records.find(u=>u.email===email),created=!user;
-    if(!user){user={id:randomUUID(),email,label:input.label??'',active:input.active??true,expiresAt:input.expiresAt??null,maxSessions:input.maxSessions??1,keyId:null,createdAt:stamp,updatedAt:stamp};this.records.push(user)}
+  constructor(file,{now=Date.now,persist=atomic}={}){this.file=file;this.now=now;this.persist=persist;this.records=[]}
+  async load(){this.records=await load(this.file)} list(){return this.records.map(publicUser)} get(id){return this.records.find(u=>u.id===id)||null} findByEmail(email){return this.records.find(u=>u.email===normalizeEmail(email))||null}
+  snapshot(){return this.records.map(r=>({...r}))} async restore(snapshot,{persist=true}={}){this.records=snapshot.map(r=>({...r}));if(persist)await this.persist(this.file,this.records)}
+  async upsert(input){const email=normalizeEmail(input.email),stamp=new Date(this.now()).toISOString();let user=this.findByEmail(email),created=!user,initialPassword,before=user&&{...user};
+    if(!user){initialPassword=password();user={id:randomUUID(),email,label:input.label??'',active:input.active??true,expiresAt:input.expiresAt??null,maxSessions:input.maxSessions??1,keyId:null,...verifier(initialPassword),passwordVersion:1,passwordUpdatedAt:stamp,createdAt:stamp,updatedAt:stamp};this.records.push(user)}
     else {if(input.label!==undefined)user.label=input.label;if(input.maxSessions!==undefined)user.maxSessions=input.maxSessions;if(input.expiresAt!==undefined)user.expiresAt=input.expiresAt;if(input.active!==undefined)user.active=input.active;user.updatedAt=stamp}
-    await atomic(this.file,this.records);return {user,created};
-  }
-  async update(id,changes){const u=this.get(id);if(!u)return null;Object.assign(u,changes,{updatedAt:new Date(this.now()).toISOString()});await atomic(this.file,this.records);return u}
+    try{await this.persist(this.file,this.records)}catch(error){if(created)this.records=this.records.filter(x=>x!==user);else replace(user,before);throw error}return {user,created,password:initialPassword}}
+  verifyPassword(user,value){return verify(user,value)}
+  async setPassword(id,value){const u=this.get(id);if(!u)return null;const before={...u},stamp=new Date(this.now()).toISOString();Object.assign(u,verifier(value),{passwordVersion:(Number.isInteger(u.passwordVersion)?u.passwordVersion:0)+1,passwordUpdatedAt:stamp,updatedAt:stamp});try{await this.persist(this.file,this.records)}catch(error){replace(u,before);throw error}return u}
+  async resetPassword(id){const value=password();const user=await this.setPassword(id,value);return user?{user,password:value}:null}
+  async update(id,changes){const u=this.get(id);if(!u)return null;const before={...u};Object.assign(u,changes,{updatedAt:new Date(this.now()).toISOString()});try{await this.persist(this.file,this.records)}catch(error){replace(u,before);throw error}return u}
+  async commitKey(id,keyId){const u=this.get(id);if(!u)throw new Error('user missing');const snapshot={...u};Object.assign(u,{keyId,updatedAt:new Date(this.now()).toISOString()});try{await this.persist(this.file,this.records)}catch(error){replace(u,snapshot);try{await this.persist(this.file,this.records)}catch{}throw error}return u}
+  async restoreKey(id,keyId){const u=this.get(id);if(!u)throw new Error('user missing');const snapshot={...u};Object.assign(u,{keyId,updatedAt:new Date(this.now()).toISOString()});try{await this.persist(this.file,this.records)}catch(error){replace(u,snapshot);throw error}return u}
+  async delete(id){const snapshot=this.records;const next=this.records.filter(u=>u.id!==id);if(next.length===snapshot.length)return false;this.records=next;try{await this.persist(this.file,this.records);return true}catch(error){this.records=snapshot;throw error}}
 }
+function replace(target,value){Object.keys(target).forEach(k=>delete target[k]);Object.assign(target,value)}
 
 export class AdminAuth{
   constructor(file,{email,salt,hash,ttlMs=8*60*60*1000,now=Date.now}={}){this.file=file;this.email=normalizeEmail(email);this.salt=salt;this.expected=validHex(hash)?Buffer.from(hash,'hex'):Buffer.alloc(32);this.configured=Boolean(this.email&&salt&&validHex(hash));this.ttlMs=ttlMs;this.now=now;this.sessions=[]}
-  async load(){this.sessions=await load(this.file);await this.prune()}
-  async prune(){const before=this.sessions.length;this.sessions=this.sessions.filter(s=>s.expiresAt>this.now());if(before!==this.sessions.length)await atomic(this.file,this.sessions)}
-  async login(email,password){
-    const actual=scryptSync(typeof password==='string'?password:'',this.salt||'unconfigured',this.expected.length||32);const passwordOk=actual.length===this.expected.length&&timingSafeEqual(actual,this.expected);
-    const emailHash=createHash('sha256').update(normalizeEmail(email)).digest(),expectedEmail=createHash('sha256').update(this.email).digest();const emailOk=timingSafeEqual(emailHash,expectedEmail);
-    if(!this.configured||!passwordOk||!emailOk)return null;
-    const token=randomBytes(32).toString('base64url');this.sessions.push({id:randomUUID(),hash:createHash('sha256').update(token).digest('hex'),expiresAt:this.now()+this.ttlMs});await atomic(this.file,this.sessions);return token;
-  }
-  async validate(token){if(typeof token!=='string')return false;await this.prune();const h=createHash('sha256').update(token).digest();return this.sessions.some(s=>{const x=Buffer.from(s.hash,'hex');return x.length===h.length&&timingSafeEqual(x,h)})}
-  async logout(token){const h=createHash('sha256').update(String(token)).digest('hex');this.sessions=this.sessions.filter(s=>s.hash!==h);await atomic(this.file,this.sessions)}
+  async load(){this.sessions=await load(this.file);await this.prune()} async prune(){const n=this.sessions.length;this.sessions=this.sessions.filter(s=>s.expiresAt>this.now());if(n!==this.sessions.length)await atomic(this.file,this.sessions)}
+  async login(email,p){const actual=scryptSync(typeof p==='string'?p:'',this.salt||'unconfigured',this.expected.length||32),passwordOk=actual.length===this.expected.length&&timingSafeEqual(actual,this.expected),a=createHash('sha256').update(normalizeEmail(email)).digest(),b=createHash('sha256').update(this.email).digest();if(!this.configured||!passwordOk||!timingSafeEqual(a,b))return null;const token=randomBytes(32).toString('base64url');this.sessions.push({id:randomUUID(),hash:hashToken(token),expiresAt:this.now()+this.ttlMs});await atomic(this.file,this.sessions);return token}
+  async validate(token){if(typeof token!=='string')return false;await this.prune();const h=Buffer.from(hashToken(token),'hex');return this.sessions.some(s=>{const x=Buffer.from(s.hash,'hex');return x.length===h.length&&timingSafeEqual(x,h)})} async logout(token){const h=hashToken(String(token));this.sessions=this.sessions.filter(s=>s.hash!==h);await atomic(this.file,this.sessions)}
 }
 export class DashboardAuth{
-  constructor(file,{users,keys,ttlMs=8*60*60*1000,now=Date.now}={}){this.file=file;this.users=users;this.keys=keys;this.ttlMs=ttlMs;this.now=now;this.sessions=[]}
-  async load(){this.sessions=await load(this.file);await this.prune()}
-  async prune(){const before=this.sessions.length;this.sessions=this.sessions.filter(s=>s.expiresAt>this.now());if(before!==this.sessions.length)await atomic(this.file,this.sessions)}
-  async create(identity){await this.prune();if(identity.role==='user'){const user=this.users.get(identity.userId),limit=user?.maxSessions;if(!Number.isInteger(limit)||limit<1)return null;const active=this.sessions.filter(s=>s.role==='user'&&s.userId===identity.userId&&s.keyId===identity.keyId&&s.expiresAt>this.now()).length;if(active>=limit)return null}const token=randomBytes(32).toString('base64url');this.sessions.push({id:randomUUID(),hash:createHash('sha256').update(token).digest('hex'),role:identity.role,userId:identity.userId??null,keyId:identity.keyId??null,user:identity.user??null,expiresAt:this.now()+this.ttlMs});await atomic(this.file,this.sessions);return token}
-  async validate(token){if(typeof token!=='string')return null;await this.prune();const h=createHash('sha256').update(token).digest();const s=this.sessions.find(v=>{const x=Buffer.from(v.hash,'hex');return x.length===h.length&&timingSafeEqual(x,h)});if(!s)return null;if(s.role==='admin')return {role:'admin',user:s.user};if(s.role!=='user')return null;await this.keys.reloadIfChanged?.();const u=this.users.get(s.userId),k=this.keys.records.find(v=>v.id===s.keyId);if(!u||!u.active||(u.expiresAt!==null&&Date.parse(u.expiresAt)<=this.now())||u.keyId!==s.keyId||!k||!k.active||k.userId!==u.id)return null;return {role:'user',user:publicUser(u)}}
-  async logout(token){const hash=createHash('sha256').update(String(token)).digest('hex');this.sessions=this.sessions.filter(s=>s.hash!==hash);await atomic(this.file,this.sessions)}
+  constructor(file,{users,ttlMs=8*60*60*1000,now=Date.now}={}){this.file=file;this.users=users;this.ttlMs=ttlMs;this.now=now;this.sessions=[]}
+  async load(){this.sessions=await load(this.file);await this.prune()} async prune(){const n=this.sessions.length;this.sessions=this.sessions.filter(s=>s.expiresAt>this.now());if(n!==this.sessions.length)await atomic(this.file,this.sessions)}
+  async create(identity){await this.prune();if(identity.role==='user'){const u=this.users.get(identity.userId),limit=u?.maxSessions;if(!Number.isInteger(limit)||limit<1)return null;if(this.sessions.filter(s=>s.role==='user'&&s.userId===u.id&&s.expiresAt>this.now()).length>=limit)return null;identity={...identity,passwordVersion:u.passwordVersion}}const token=randomBytes(32).toString('base64url');this.sessions.push({id:randomUUID(),hash:hashToken(token),role:identity.role,userId:identity.userId??null,passwordVersion:identity.passwordVersion??null,user:identity.user??null,expiresAt:this.now()+this.ttlMs});await atomic(this.file,this.sessions);return token}
+  async validate(token){if(typeof token!=='string')return null;await this.prune();const h=Buffer.from(hashToken(token),'hex'),s=this.sessions.find(v=>{const x=Buffer.from(v.hash,'hex');return x.length===h.length&&timingSafeEqual(x,h)});if(!s)return null;if(s.role==='admin')return {role:'admin',user:s.user};if(s.role!=='user')return null;const u=this.users.get(s.userId);if(!u||!u.active||(u.expiresAt!==null&&Date.parse(u.expiresAt)<=this.now())||!Number.isInteger(u.passwordVersion)||u.passwordVersion!==s.passwordVersion)return null;return {role:'user',user:publicUser(u)}}
+  async logout(token){const h=hashToken(String(token));this.sessions=this.sessions.filter(s=>s.hash!==h);await atomic(this.file,this.sessions)}
+  async revokeUser(userId,exceptToken){const except=exceptToken&&hashToken(exceptToken);this.sessions=this.sessions.filter(s=>s.role!=='user'||s.userId!==userId||s.hash===except);await atomic(this.file,this.sessions)}
+  snapshot(){return this.sessions.map(s=>({...s}))} async restore(snapshot,{persist=true}={}){this.sessions=snapshot.map(s=>({...s}));if(persist)await atomic(this.file,this.sessions)}
 }
+const hashToken=v=>createHash('sha256').update(v).digest('hex');
 function validHex(v){return typeof v==='string'&&v.length>=64&&v.length%2===0&&/^[a-f0-9]+$/i.test(v)}
-export function validUserInput(v,{partial=false}={}){
-  if(!v||typeof v!=='object'||Array.isArray(v))return false;const allowed=partial?['label','active','expiresAt','maxSessions']:['email','label','active','expiresAt','maxSessions'];if(Object.keys(v).some(k=>!allowed.includes(k)))return false;
-  if(!partial&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizeEmail(v.email)))return false;
-  if(v.label!==undefined&&(typeof v.label!=='string'||v.label.length>200))return false;if(v.active!==undefined&&typeof v.active!=='boolean')return false;if(v.maxSessions!==undefined&&(!Number.isInteger(v.maxSessions)||v.maxSessions<1||v.maxSessions>1000))return false;
-  if(v.expiresAt!==undefined&&v.expiresAt!==null&&(typeof v.expiresAt!=='string'||!Number.isFinite(Date.parse(v.expiresAt))))return false;return !partial||Object.keys(v).length>0;
-}
+export function validUserInput(v,{partial=false}={}){if(!v||typeof v!=='object'||Array.isArray(v))return false;const allowed=partial?['label','active','expiresAt','maxSessions']:['email','label','active','expiresAt','maxSessions'];if(Object.keys(v).some(k=>!allowed.includes(k)))return false;if(!partial&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizeEmail(v.email)))return false;if(v.label!==undefined&&(typeof v.label!=='string'||v.label.length>200))return false;if(v.active!==undefined&&typeof v.active!=='boolean')return false;if(v.maxSessions!==undefined&&(!Number.isInteger(v.maxSessions)||v.maxSessions<1||v.maxSessions>1000))return false;if(v.expiresAt!==undefined&&v.expiresAt!==null&&(typeof v.expiresAt!=='string'||!Number.isFinite(Date.parse(v.expiresAt))))return false;return !partial||Object.keys(v).length>0}
 export {publicUser};

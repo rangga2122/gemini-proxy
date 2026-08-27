@@ -22,13 +22,16 @@ export async function createApp(o={}){
   const artifactCleanupTimer=setInterval(cleanup,cleanupIntervalMs);artifactCleanupTimer.unref();
   const gen=new GenClient({baseUrl:o.genUrl||process.env.GEN_URL,apiKey:o.genKey||process.env.GEN_API_KEY});
   const tools=createTools(gen,artifacts,{publicBaseUrl:o.publicBaseUrl||process.env.PUBLIC_BASE_URL||'',limits:o.limits});
-  const rate=new FixedWindow(now,{maxKeys:o.rateLimitMaxKeys||10000}),adminRate=new FixedWindow(now,{maxKeys:10000});let closing=false;
+  const rate=new FixedWindow(now,{maxKeys:o.rateLimitMaxKeys||10000}),adminRate=new FixedWindow(now,{maxKeys:10000}),bodyTimeoutMs=positive(o.bodyTimeoutMs??process.env.BODY_TIMEOUT_MS,10000);let closing=false;
+  let mutationTail=Promise.resolve();const mutate=fn=>{const run=mutationTail.then(fn,fn);mutationTail=run.catch(()=>{});return run};
   const server=http.createServer(async(req,res)=>{security(res);try{
     const url=new URL(req.url||'/','http://localhost');
     if(req.method==='GET'&&url.pathname==='/health')return json(res,closing?503:200,{status:closing?'stopping':'ok'});
-    if(url.pathname.startsWith('/auth/'))return await handleAuth(req,res,url,{admin,dashboard,users,keys,adminRate,now,o});
+    if(needsAdminBody(req.method,url.pathname)){const parsed=await readAdminJson(req,res,bodyTimeoutMs);if(!parsed.ok)return;req.parsedBody=parsed.value}
+    if(url.pathname.startsWith('/auth/'))return await mutate(()=>handleAuth(req,res,url,{admin,dashboard,users,keys,adminRate,now,o}));
+    if(url.pathname.startsWith('/profile'))return await mutate(()=>handleProfile(req,res,url,{dashboard,users,keys,adminRate,now,o}));
     if(url.pathname.startsWith('/dashboard/'))return await handleDashboard(req,res,url,{dashboard,gen});
-    if(url.pathname.startsWith('/admin/'))return await handleAdmin(req,res,url,{admin,dashboard,users,keys,adminRate,now,o});
+    if(url.pathname.startsWith('/admin/'))return await mutate(()=>handleAdmin(req,res,url,{admin,dashboard,users,keys,adminRate,now,o}));
     const match=url.pathname.match(/^\/artifacts\/([a-f0-9]{32})$/);
     if(req.method==='GET'&&match){const a=await artifacts.get(match[1]);if(!a){res.writeHead(404);return res.end()}res.writeHead(200,{'content-type':a.mime,'cache-control':'private, max-age=60','content-disposition':`attachment; filename="${match[1]}.${extension(a.mime)}"`});return res.end(a.data)}
     if(req.method!=='POST'||url.pathname!=='/mcp'){res.writeHead(404);return res.end()}if(closing){res.writeHead(503);return res.end()}
@@ -61,9 +64,9 @@ async function handleAuth(req,res,url,c){
   const ip=req.socket.remoteAddress||'unknown';
   if(req.method==='POST'&&url.pathname==='/auth/login'){
     const limit=c.adminRate.take(`dashboard-login:${ip}`,Number(c.o.adminLoginRateLimit||10));if(!limit.ok)return json(res,429,{error:'Too many requests'});
-    const v=await jsonBody(req);if(!v||Object.keys(v).some(k=>!['email','credential'].includes(k))||typeof v.email!=='string'||typeof v.credential!=='string')return json(res,400,{error:'Invalid request'});
+    const v=req.parsedBody;if(!v||Object.keys(v).some(k=>!['email','credential'].includes(k))||typeof v.email!=='string'||typeof v.credential!=='string')return json(res,400,{error:'Invalid request'});
     let identity=null,legacy=await c.admin.login(v.email,v.credential);if(legacy){await c.admin.logout(legacy);identity={role:'admin',user:{email:c.admin.email}}}
-    if(!identity){const record=await c.keys.authenticate(v.credential),user=record?.userId&&c.users.get(record.userId);if(user&&normalizeEmail(v.email)===user.email&&user.active&&(user.expiresAt===null||Date.parse(user.expiresAt)>c.now())&&user.keyId===record.id)identity={role:'user',userId:user.id,keyId:record.id}}
+    if(!identity){const user=c.users.findByEmail(v.email);if(user&&user.active&&(user.expiresAt===null||Date.parse(user.expiresAt)>c.now())&&c.users.verifyPassword(user,v.credential))identity={role:'user',userId:user.id}}
     if(!identity)return json(res,401,{error:'Invalid credentials'});const token=await c.dashboard.create(identity);if(!token)return json(res,429,{error:'Session limit reached'});const session=await c.dashboard.validate(token);res.setHeader('set-cookie',sessionCookieHeader(token));return json(res,200,{authenticated:true,...session});
   }
   const token=sessionCookie(req),session=await c.dashboard.validate(token);
@@ -72,32 +75,45 @@ async function handleAuth(req,res,url,c){
   return notFound(res);
 }
 
+async function handleProfile(req,res,url,c){
+  const oldToken=sessionCookie(req),session=await c.dashboard.validate(oldToken);if(!session)return unauthorized(res);
+  if(req.method==='GET'&&url.pathname==='/profile'){if(session.role==='admin')return json(res,200,{role:'admin',user:session.user,remainingMs:null});const u=c.users.get(session.user.id),key=u.keyId&&c.keys.records.find(k=>k.id===u.keyId&&k.active),remainingMs=u.expiresAt===null?null:Math.max(0,Math.floor(Date.parse(u.expiresAt)-c.now()));return json(res,200,{role:'user',user:publicUser(u),remainingMs,hasApiKey:Boolean(key),...(key?{keyId:key.id,keyCreatedAt:key.createdAt}:{})})}
+  if(session.role!=='user')return json(res,403,{error:'Forbidden'});const u=c.users.get(session.user.id);
+  const rl=c.adminRate.take(`profile:${u.id}`,Number(c.o.profileRateLimit??30));if(!rl.ok)return json(res,429,{error:'Too many requests'});
+  if(req.method==='POST'&&url.pathname==='/profile/password'){const v=req.parsedBody,allowed=['currentPassword','newPassword','confirmPassword'];if(!v||Object.keys(v).length!==3||Object.keys(v).some(k=>!allowed.includes(k))||typeof v.currentPassword!=='string'||typeof v.newPassword!=='string'||typeof v.confirmPassword!=='string'||v.newPassword!==v.confirmPassword||v.newPassword.length<10||v.newPassword.length>1024)return json(res,400,{error:'Invalid request'});if(!c.users.verifyPassword(u,v.currentPassword))return json(res,401,{error:'Invalid credentials'});await c.users.setPassword(u.id,v.newPassword);await c.dashboard.revokeUser(u.id);const token=await c.dashboard.create({role:'user',userId:u.id});res.setHeader('set-cookie',sessionCookieHeader(token));return json(res,200,{changed:true})}
+  if(req.method==='POST'&&url.pathname==='/profile/api-key'){const made=await c.keys.replaceForUser(u.keyId,u.label||u.email,{userId:u.id,email:u.email},{commit:id=>c.users.commitKey(u.id,id),rollback:id=>c.users.restoreKey(u.id,id)});return json(res,201,{key:made.key,keyId:made.id,createdAt:c.keys.records.find(k=>k.id===made.id).createdAt})}
+  if(req.method==='DELETE'&&url.pathname==='/profile/api-key'){await deleteKey(c,u);res.writeHead(204);return res.end()}
+  return notFound(res);
+}
+
 async function handleAdmin(req,res,url,c){
   const ip=req.socket.remoteAddress||'unknown',limit=c.adminRate.take(`admin:${ip}`,Number(c.o.adminRateLimit||60));if(!limit.ok)return json(res,429,{error:'Too many requests'});
   if(req.method==='POST'&&url.pathname==='/admin/login'){
     if(!c.admin.configured)return json(res,503,{error:'Admin authentication unavailable'});
     const loginLimit=c.adminRate.take(`login:${ip}`,Number(c.o.adminLoginRateLimit||10));if(!loginLimit.ok)return json(res,429,{error:'Too many requests'});
-    const value=await jsonBody(req);if(!value||Object.keys(value).some(k=>!['email','password'].includes(k))||typeof value.email!=='string'||typeof value.password!=='string')return json(res,400,{error:'Invalid request'});
+    const value=req.parsedBody;if(!value||Object.keys(value).some(k=>!['email','password'].includes(k))||typeof value.email!=='string'||typeof value.password!=='string')return json(res,400,{error:'Invalid request'});
     const token=await c.admin.login(value.email,value.password);return token?json(res,200,{token,expiresInMs:c.admin.ttlMs}):json(res,401,{error:'Invalid credentials'});
   }
   const token=bearer(req),legacy=token&&await c.admin.validate(token),session=!legacy&&await c.dashboard.validate(sessionCookie(req));if(!legacy&&!session)return unauthorized(res);if(session&&session.role!=='admin')return json(res,403,{error:'Forbidden'});
   if(req.method==='POST'&&url.pathname==='/admin/logout'){await c.admin.logout(token);res.writeHead(204);return res.end()}
   if(req.method==='GET'&&url.pathname==='/admin/users')return json(res,200,{users:c.users.list()});
   if(req.method==='POST'&&url.pathname==='/admin/users'){
-    const value=await jsonBody(req);if(!validUserInput(value))return json(res,400,{error:'Invalid request'});
-    const result=await c.users.upsert(value);let key;if(result.created){const made=await c.keys.create(result.user.label||result.user.email,{userId:result.user.id,email:result.user.email});key=made.key;await c.users.update(result.user.id,{keyId:made.id})}
-    return json(res,result.created?201:200,{user:publicUser(result.user),...(key?{key}:{})});
+    const value=req.parsedBody;if(!validUserInput(value))return json(res,400,{error:'Invalid request'});
+    const result=await c.users.upsert(value);return json(res,result.created?201:200,{user:publicUser(result.user),...(result.password?{password:result.password}:{})});
   }
-  const match=url.pathname.match(/^\/admin\/users\/([0-9a-f-]+)(\/rotate)?$/i);if(!match)return notFound(res);const user=c.users.get(match[1]);if(!user)return notFound(res);
-  if(req.method==='POST'&&match[2]==='/rotate'){
-    if(user.keyId)await c.keys.revoke(user.keyId);const made=await c.keys.create(user.label||user.email,{userId:user.id,email:user.email});await c.users.update(user.id,{keyId:made.id});return json(res,200,{user:publicUser(user),key:made.key});
-  }
-  if(req.method==='PATCH'&&!match[2]){const value=await jsonBody(req);if(!validUserInput(value,{partial:true}))return json(res,400,{error:'Invalid request'});await c.users.update(user.id,value);return json(res,200,{user:publicUser(user)})}
-  if(req.method==='DELETE'&&!match[2]){if(user.keyId)await c.keys.revoke(user.keyId);await c.users.update(user.id,{active:false});res.writeHead(204);return res.end()}
+  const match=url.pathname.match(/^\/admin\/users\/([0-9a-f-]+)(\/(?:reset-password|api-key|rotate))?$/i);if(!match)return notFound(res);const user=c.users.get(match[1]);if(!user)return notFound(res);
+  if(req.method==='POST'&&match[2]==='/reset-password'){const result=await c.users.resetPassword(user.id);await c.dashboard.revokeUser(user.id);return json(res,200,{user:publicUser(user),password:result.password})}
+  if(req.method==='POST'&&match[2]==='/rotate'){const made=await c.keys.replaceForUser(user.keyId,user.label||user.email,{userId:user.id,email:user.email},{commit:id=>c.users.commitKey(user.id,id),rollback:id=>c.users.restoreKey(user.id,id)});return json(res,201,{key:made.key,keyId:made.id,createdAt:c.keys.records.find(k=>k.id===made.id).createdAt})}
+  if(req.method==='DELETE'&&match[2]==='/api-key'){await deleteKey(c,user);res.writeHead(204);return res.end()}
+  if(req.method==='PATCH'&&!match[2]){const value=req.parsedBody;if(!validUserInput(value,{partial:true}))return json(res,400,{error:'Invalid request'});await c.users.update(user.id,value);return json(res,200,{user:publicUser(user)})}
+  if(req.method==='DELETE'&&!match[2]){await hardDelete(c,user.id);res.writeHead(204);return res.end()}
   return notFound(res);
 }
-async function jsonBody(req){try{const raw=await body(req,ADMIN_MAX);return JSON.parse(raw)}catch{return null}}
-function body(req,max){return new Promise((resolve,reject)=>{let n=0,a=[];req.on('data',chunk=>{n+=chunk.length;if(n>max){reject(new Error('too large'));req.destroy()}else a.push(chunk)});req.on('end',()=>resolve(Buffer.concat(a).toString()));req.on('error',reject)})}
+async function deleteKey(c,user){const us=c.users.snapshot(),ks=c.keys.snapshot();try{if(user.keyId)await c.keys.revoke(user.keyId);await c.users.update(user.id,{keyId:null})}catch(error){try{await c.keys.restore(ks)}catch{}try{await c.users.restore(us)}catch{}throw error}}
+async function hardDelete(c,id){const us=c.users.snapshot(),ks=c.keys.snapshot(),ss=c.dashboard.snapshot();try{const u=c.users.get(id);if(u?.keyId)await c.keys.revoke(u.keyId);await c.dashboard.revokeUser(id);await c.users.delete(id)}catch(error){try{await c.keys.restore(ks)}catch{}try{await c.dashboard.restore(ss)}catch{}try{await c.users.restore(us)}catch{}throw error}}
+function needsAdminBody(method,path){return method==='POST'&&(path==='/auth/login'||path==='/profile/password'||path==='/admin/login'||path==='/admin/users')||method==='PATCH'&&/^\/admin\/users\/[0-9a-f-]+$/i.test(path)}
+async function readAdminJson(req,res,timeoutMs){try{return {ok:true,value:JSON.parse(await body(req,ADMIN_MAX,timeoutMs))}}catch(error){if(error.code==='BODY_TIMEOUT'){res.setHeader('connection','close');json(res,408,{error:'Request timeout'});return {ok:false}}json(res,400,{error:'Invalid request'});return {ok:false}}}
+function body(req,max,timeoutMs=10000){return new Promise((resolve,reject)=>{let n=0,a=[],done=false;const finish=(error,value)=>{if(done)return;done=true;clearTimeout(timer);error?reject(error):resolve(value)};const timer=setTimeout(()=>{const error=new Error('body timeout');error.code='BODY_TIMEOUT';finish(error);req.resume()},timeoutMs);req.on('data',chunk=>{n+=chunk.length;if(n>max){const error=new Error('too large');error.code='BODY_TOO_LARGE';finish(error);req.resume()}else if(!done)a.push(chunk)});req.on('end',()=>finish(null,Buffer.concat(a).toString()));req.on('aborted',()=>finish(new Error('aborted')));req.on('error',finish)})}
 function bearer(req){return req.headers.authorization?.match(/^Bearer ([A-Za-z0-9_-]{20,})$/)?.[1]}
 function sessionCookie(req){const raw=req.headers.cookie;return typeof raw==='string'?raw.split(';').map(x=>x.trim()).find(x=>x.startsWith('dashboard_session='))?.slice('dashboard_session='.length):undefined}
 function sessionCookieHeader(token,clear=false){return `dashboard_session=${token}; Path=/; HttpOnly; Secure; SameSite=Lax${clear?'; Max-Age=0':''}`}

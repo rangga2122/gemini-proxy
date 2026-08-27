@@ -196,7 +196,7 @@ html{color-scheme:dark}[hidden]{display:none!important}body{background:var(--voi
 <body>
 <div class="auth-screen auth-loading" id="authLoading"><div><div class="spinner" style="margin:auto"></div><p style="margin-top:14px">Memeriksa sesi aman…</p></div></div>
 <div class="auth-screen" id="publicScreen" hidden><header class="public-nav"><div class="public-brand">GEN CONSOLE</div><button class="btn" type="button" id="openLogin"><span>Masuk</span></button></header><main class="landing-main"><div class="landing-copy"><div class="landing-kicker">AI WORKSPACE / INDONESIA</div><h1>SATU RUANG.<br>SEMUA MODALITAS.</h1><p>Buat gambar, pahami visual, berdialog dengan AI, dan sintesis suara melalui satu console yang cepat dan terkelola.</p><div class="landing-actions"><button class="btn" type="button" id="heroLogin"><span>Masuk ke Console</span></button></div></div><section class="capabilities" aria-label="Kemampuan"><article class="capability"><strong>GENERATE</strong><span>Produksi visual dari prompt atau gambar referensi.</span></article><article class="capability"><strong>ANALYZE</strong><span>Pahami konten dan konteks gambar secara mendalam.</span></article><article class="capability"><strong>CONVERSE</strong><span>Chat teks untuk ide, pekerjaan, dan eksplorasi.</span></article><article class="capability"><strong>SYNTHESIZE</strong><span>Ubah teks menjadi audio dengan pilihan karakter suara.</span></article></section></main></div>
-<div class="auth-screen" id="loginScreen" hidden><div class="login-wrap"><section class="login-card"><div class="public-brand">GEN CONSOLE</div><h1>MASUK</h1><p>Gunakan akses yang diberikan administrator.</p><form class="login-form" id="dashboardLoginForm"><div class="field"><label for="loginEmail">Email</label><input class="input" id="loginEmail" type="email" autocomplete="username" required></div><div class="field"><label for="loginCredential">Passkey / API Key</label><input class="input" id="loginCredential" type="password" autocomplete="current-password" required></div><div class="login-error" id="loginError" role="alert"></div><button class="btn" id="loginSubmit" type="submit"><span>Masuk</span></button></form><button class="btn secondary login-back" id="loginBack" type="button"><span>Kembali</span></button></section></div></div>
+<div class="auth-screen" id="loginScreen" hidden><div class="login-wrap"><section class="login-card"><div class="public-brand">GEN CONSOLE</div><h1>MASUK</h1><p>Gunakan password pengguna atau passkey administrator.</p><form class="login-form" id="dashboardLoginForm"><div class="field"><label for="loginEmail">Email</label><input class="input" id="loginEmail" type="email" autocomplete="username" required></div><div class="field"><label for="loginCredential">Password pengguna / passkey admin</label><input class="input" id="loginCredential" type="password" autocomplete="current-password" required></div><div class="login-error" id="loginError" role="alert"></div><button class="btn" id="loginSubmit" type="submit"><span>Masuk</span></button></form><button class="btn secondary login-back" id="loginBack" type="button"><span>Kembali</span></button></section></div></div>
 <!-- KONTRAK DESAIN: Gen Console memakai bahasa visual dashboard SBO: latar arang, panel instrumen berbingkai tipis, aksen amber, tipografi kondens untuk navigasi, dan monospace hanya untuk data teknis. Desktop memiliki sidebar 216px dan topbar sticky; mobile memakai navigasi bawah dengan tray Lainnya. Konten berbahasa Indonesia, ikon tombol berupa SVG authored, target sentuh minimal 44px, serta layout tanpa overflow. Semua ID, endpoint, autentikasi, admin MCP, API key, gambar, vision, chat, dan audio tetap menjadi kontrak perilaku yang tidak boleh diubah. -->
 <div class="app-shell" id="dashboardApp" hidden><aside class="side-nav"><div class="side-brand"><strong>GEN CONSOLE</strong><span>gen.azkazamdigital.com</span></div><nav class="nav-list" id="desktopNav" aria-label="Navigasi utama"></nav></aside><main class="main-shell"><header class="topbar"><h1 id="currentViewTitle">Ringkasan</h1><div class="account-box"><span class="account-email" id="accountEmail"></span><span class="role-badge" id="accountRole"></span><button class="logout-btn" id="accountLogout" type="button">Keluar</button></div></header>
 <div class="wrap">
@@ -243,7 +243,8 @@ html{color-scheme:dark}[hidden]{display:none!important}body{background:var(--voi
     </button>
   </div>
 </div>
-<div class="simple-key">
+<section class="simple-key card" id="myApiKey" hidden>
+  <div><h3>API Key Saya</h3><p class="user-meta" id="myApiKeyMeta">Memuat status key…</p><p class="user-meta">Secret hanya ditampilkan satu kali. Simpan di pengelola password.</p></div>
   <div class="cred">
     <span class="cred-label">API Key</span>
     <span class="cred-value" id="credKey">Belum dibuat</span>
@@ -252,7 +253,8 @@ html{color-scheme:dark}[hidden]{display:none!important}body{background:var(--voi
     </button>
   </div>
   <button class="btn" id="generateKeyBtn" onclick="generateSimpleKey()"><span>Generate API Key</span></button>
-</div>
+  <button class="btn secondary" id="revokeKeyBtn" onclick="revokeSimpleKey()"><span>Cabut API Key</span></button>
+</section>
 
 <!-- Modality Grid -->
 <div class="grid">
@@ -428,6 +430,14 @@ html{color-scheme:dark}[hidden]{display:none!important}body{background:var(--voi
 
 </div>
 
+<section class="mcp-panel" id="profileView" hidden aria-labelledby="profileTitle">
+  <div class="mcp-head"><div><h2 id="profileTitle">PROFIL</h2><p>Informasi akun dan keamanan Anda.</p></div></div>
+  <div class="mcp-layout">
+    <div class="mcp-block"><h3>Informasi akun</h3><div class="user-meta" id="profileSummary">Memuat profil…</div><div id="userProfileFields"><p class="user-meta" id="profileExpiry"></p><p class="user-meta" id="profileKeyStatus"></p></div><p class="mcp-note" id="adminProfileNote" hidden>Passkey administrator dikelola di sisi server dan tidak dapat diubah dari console.</p></div>
+    <form class="mcp-block login-form" id="passwordForm"><h3>Ubah password</h3><div class="field"><label for="currentPassword">Password saat ini</label><input class="input" id="currentPassword" type="password" autocomplete="current-password" required></div><div class="field"><label for="newPassword">Password baru (minimal 10 karakter)</label><input class="input" id="newPassword" type="password" autocomplete="new-password" minlength="10" required></div><div class="field"><label for="confirmPassword">Konfirmasi password</label><input class="input" id="confirmPassword" type="password" autocomplete="new-password" minlength="10" required></div><div class="admin-message" id="profileMessage" role="status"></div><button class="btn" type="submit"><span>Simpan password</span></button></form>
+  </div>
+</section>
+
 <!-- MCP Connection -->
 <section class="mcp-panel" aria-labelledby="mcpTitle">
   <div id="mcpContent">
@@ -455,7 +465,7 @@ html{color-scheme:dark}[hidden]{display:none!important}body{background:var(--voi
           <div class="field"><label for="userMaxSessions">Maks. sesi</label><input class="input" id="userMaxSessions" type="number" min="1" max="1000" value="1" required></div>
           <div><label class="check-field"><input id="userActive" type="checkbox" checked> Aktif</label><button class="btn" id="userSubmit" type="submit"><span>Tambah / perbarui</span></button></div>
         </form>
-        <div class="secret-result" id="secretResult" role="alert"><strong>Key MCP hanya ditampilkan satu kali</strong><p>Simpan sekarang. Key tidak dapat dilihat kembali setelah panel ini berubah.</p><div class="secret-row"><code id="secretKey"></code><button type="button" class="btn" id="copySecret"><span>Salin key</span></button></div></div>
+        <div class="secret-result" id="secretResult" role="alert"><strong id="secretTitle">PASSWORD AWAL hanya ditampilkan satu kali</strong><p id="secretEmail"></p><p>Simpan sekarang. Rahasia tidak dapat dilihat kembali setelah panel ini berubah.</p><div class="secret-row"><code id="secretKey"></code><button type="button" class="btn" id="copySecret"><span>Salin kredensial</span></button></div></div>
         <div class="admin-list" id="adminUsers" aria-live="polite"></div>
       </div>
     </div>
@@ -562,22 +572,24 @@ response = client.chat.completions.create(
 <script>
 const BASE = window.location.origin;
 const DASH_VIEWS = [
-  ['ringkasan','Ringkasan','card-ringkasan'],['gambar','Gambar','cardImage'],['analisis','Analisis','cardVision'],['chat','Chat','cardChat'],['audio','Audio','cardTTS'],['mcp','MCP','mcp'],['pengguna','Pengguna','adminMcp'],['dokumentasi','Dokumentasi','docs']
+  ['ringkasan','Ringkasan','card-ringkasan'],['gambar','Gambar','cardImage'],['analisis','Analisis','cardVision'],['chat','Chat','cardChat'],['audio','Audio','cardTTS'],['mcp','MCP','mcp'],['profil','Profil','profileView'],['pengguna','Pengguna','adminMcp'],['dokumentasi','Dokumentasi','docs']
 ];
 const navIcon = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M8 9h8M8 13h8M8 17h5"/></svg>';
 function navigateView(id, updateHash = true) {
   if (!DASH_VIEWS.some(v => v[0] === id)) id = 'ringkasan';
   if (id === 'pengguna' && authSession?.role !== 'admin') id = 'ringkasan';
   document.querySelectorAll('.card,.mcp-panel,.code-section').forEach(el => el.classList.remove('view-active'));
-  document.querySelector('.hero').hidden = id !== 'ringkasan'; document.querySelector('.pool-bar').hidden = id !== 'ringkasan' || authSession?.role !== 'admin'; document.querySelector('.creds').hidden = id !== 'ringkasan'; document.querySelector('.simple-key').hidden = true;
+  document.querySelector('.hero').hidden = id !== 'ringkasan'; document.querySelector('.pool-bar').hidden = id !== 'ringkasan' || authSession?.role !== 'admin'; document.querySelector('.creds').hidden = id !== 'ringkasan'; document.querySelector('.simple-key').hidden = id !== 'ringkasan' || authSession?.role !== 'user'; if(id !== 'ringkasan') clearRawKey();
   document.getElementById('userOnlineStatus').hidden = id !== 'ringkasan' || authSession?.role === 'admin';
   document.getElementById('mcpContent').hidden = id === 'pengguna';
   document.getElementById('adminMcp').hidden = id !== 'pengguna' || authSession?.role !== 'admin';
+  document.getElementById('profileView').hidden = id !== 'profil';
   const targets = {gambar:'cardImage',analisis:'cardVision',chat:'cardChat',audio:'cardTTS',mcp:'mcpTitle',pengguna:'adminMcp',dokumentasi:'codeCurl'};
   const target = targets[id] && document.getElementById(targets[id]); if (target) (target.closest('.card,.mcp-panel,.code-section') || target).classList.add('view-active');
   document.querySelectorAll('[data-view]').forEach(b => { const active=b.dataset.view === id; b.classList.toggle('active', active); if(active) b.setAttribute('aria-current','page'); else b.removeAttribute('aria-current'); });
   document.getElementById('currentViewTitle').textContent = DASH_VIEWS.find(v => v[0] === id)[1]; document.getElementById('moreTray').classList.remove('open');
   if (id === 'pengguna') { document.getElementById('adminArea').hidden = false; document.getElementById('adminToggle').setAttribute('aria-expanded','true'); }
+  if (id === 'profil') loadProfile();
   if (updateHash) history.replaceState(null, '', '#' + id);
 }
 function buildNavigation() {
@@ -594,6 +606,9 @@ window.addEventListener('hashchange',()=>navigateView(location.hash.slice(1)==='
 const MCP_ENDPOINT = 'https://gen.azkazamdigital.com/mcp';
 const MCP_CONFIG = JSON.stringify({ mcpServers: { cosmicAI: { url: MCP_ENDPOINT, headers: { Authorization: 'Bearer YOUR_MCP_KEY' } } } }, null, 2);
 let authSession = null;
+let rawKeyTimer=null;
+function clearRawKey(){if(rawKeyTimer)clearTimeout(rawKeyTimer);rawKeyTimer=null;document.getElementById('credKey').textContent='Dikelola aman oleh sesi dashboard';}
+function revealRawKey(key){clearRawKey();document.getElementById('credKey').textContent=key;rawKeyTimer=setTimeout(clearRawKey,60000)}
 
 function setApiKey() { document.getElementById('credKey').textContent = 'Dikelola aman oleh sesi dashboard'; }
 
@@ -605,14 +620,29 @@ function showDashboard(session, credential='') {
   authSession=session; setApiKey();
   document.getElementById('accountEmail').textContent=session.user?.email||''; document.getElementById('accountRole').textContent=session.role;
   document.getElementById('keyNotice').classList.remove('show');
-  document.querySelector('.simple-key').hidden=true; document.getElementById('userOnlineStatus').hidden=session.role==='admin';
+  document.querySelector('.simple-key').hidden=session.role==='admin'; document.getElementById('userOnlineStatus').hidden=session.role==='admin';
   showAuthScreen('dashboard'); buildNavigation(); init(); if(session.role==='admin'){setAdminState(true); loadUsers().catch(e=>adminMessage(e.message));}
 }
+function returnToLogin() { clearRawKey(); authSession=null; history.replaceState(null,'',location.pathname); showAuthScreen('login'); }
+function durationId(ms) { if (ms == null) return 'Tidak dibatasi'; return `${Math.max(0,Math.ceil(ms/86400000))} hari tersisa`; }
+async function loadProfile() {
+  clearRawKey();
+  try {
+    const r=await fetch(`${BASE}/profile`, { credentials:'include', headers:{Accept:'application/json'} });
+    if(r.status===401){returnToLogin();return} const data=await r.json().catch(()=>null); if(!r.ok)throw new Error(errorMessage(r.status,data));
+    const user=data.user||{},isUser=(data.role||authSession?.role)==='user';
+    document.getElementById('profileSummary').textContent=`Email: ${user.email||'-'} · Label: ${user.label||'-'} · Role: ${data.role||authSession?.role||'-'} · Status: ${user.active===false?'Nonaktif':'Aktif'}`;
+    document.getElementById('userProfileFields').hidden=!isUser; document.getElementById('passwordForm').hidden=!isUser; document.getElementById('adminProfileNote').hidden=isUser;
+    if(isUser){document.getElementById('profileExpiry').textContent=`Kedaluwarsa: ${user.expiresAt?new Date(user.expiresAt).toLocaleString('id-ID'):'Tidak dibatasi'} · ${durationId(data.remainingMs)}`;document.getElementById('profileKeyStatus').textContent=`API key: ${data.hasApiKey?'Ada':'Belum ada'}${data.keyCreatedAt?' · Dibuat '+new Date(data.keyCreatedAt).toLocaleString('id-ID'):''}`;renderMyKey(data);}
+  }catch(e){document.getElementById('profileSummary').textContent=e.message}
+}
+function renderMyKey(data){const has=Boolean(data.hasApiKey);document.getElementById('myApiKeyMeta').textContent=has?`Key aktif${data.keyId?' · ID '+data.keyId:''}${data.keyCreatedAt?' · Dibuat '+new Date(data.keyCreatedAt).toLocaleString('id-ID'):''}`:'Belum memiliki API key.';document.getElementById('generateKeyBtn').querySelector('span').textContent=has?'Ganti API Key':'Generate API Key';document.getElementById('revokeKeyBtn').hidden=!has;}
+document.getElementById('passwordForm').addEventListener('submit',async event=>{event.preventDefault();const currentPassword=document.getElementById('currentPassword').value,newPassword=document.getElementById('newPassword').value,confirmPassword=document.getElementById('confirmPassword').value,msg=document.getElementById('profileMessage');if(newPassword.length<10){msg.textContent='Password baru minimal 10 karakter.';msg.className='admin-message show error';return}if(newPassword!==confirmPassword){msg.textContent='Konfirmasi password tidak cocok.';msg.className='admin-message show error';return}try{const r=await fetch(`${BASE}/profile/password`,{method:'POST',credentials:'include',headers:{'Content-Type':'application/json','Accept':'application/json'},body:JSON.stringify({ currentPassword, newPassword, confirmPassword })});const d=await r.json().catch(()=>null);if(r.status===401){msg.textContent='Password saat ini salah.';msg.className='admin-message show error';return}if(!r.ok)throw new Error(errorMessage(r.status,d));event.target.reset();msg.textContent='Password berhasil diperbarui. Sesi aman telah diganti.';msg.className='admin-message show info';}catch(e){msg.textContent=e.message;msg.className='admin-message show error'}});
 async function checkSession() { try { const r=await fetch(`${BASE}/auth/session`,{credentials:'include',headers:{Accept:'application/json'}}); const d=await r.json().catch(()=>null); if(r.ok&&d?.authenticated) return showDashboard(d); } catch {} showAuthScreen('public'); }
 function openLogin(){document.getElementById('loginError').textContent='';showAuthScreen('login');document.getElementById('loginEmail').focus()}
 document.getElementById('openLogin').onclick=openLogin; document.getElementById('heroLogin').onclick=openLogin; document.getElementById('loginBack').onclick=()=>showAuthScreen('public');
 document.getElementById('dashboardLoginForm').addEventListener('submit',async e=>{e.preventDefault();const btn=document.getElementById('loginSubmit'),credential=document.getElementById('loginCredential').value;setLoading(btn,true);document.getElementById('loginError').textContent='';try{const r=await fetch(`${BASE}/auth/login`,{method:'POST',credentials:'include',headers:{'Content-Type':'application/json','Accept':'application/json'},body:JSON.stringify({email:document.getElementById('loginEmail').value.trim(),credential})});const d=await r.json().catch(()=>null);if(!r.ok||!d?.authenticated)throw new Error('Email atau kredensial tidak valid.');document.getElementById('loginCredential').value='';showDashboard(d,d.role==='user'?credential:'');}catch(err){document.getElementById('loginCredential').value='';document.getElementById('loginError').textContent=err.message;}finally{setLoading(btn,false)}});
-document.getElementById('accountLogout').onclick=async()=>{try{await fetch(`${BASE}/auth/logout`,{method:'POST',credentials:'include'})}finally{authSession=null;setApiKey();history.replaceState(null,'',location.pathname);showAuthScreen('public')}};
+document.getElementById('accountLogout').onclick=async()=>{try{await fetch(`${BASE}/auth/logout`,{method:'POST',credentials:'include'})}finally{clearRawKey();authSession=null;setApiKey();history.replaceState(null,'',location.pathname);showAuthScreen('public')}};
 
 async function init() {
   document.getElementById('credUrl').textContent = BASE;
@@ -704,8 +734,10 @@ async function runAdminAction(action) {
   catch (e) { adminMessage(e.message); }
   finally { adminBusy = false; }
 }
-function showSecret(key) {
+function showSecret(key, email='', title='PASSWORD AWAL') {
   if (!key) return;
+  document.getElementById('secretTitle').textContent = `${title} hanya ditampilkan satu kali`;
+  document.getElementById('secretEmail').textContent = email ? `EMAIL: ${email}` : '';
   document.getElementById('secretKey').textContent = key;
   document.getElementById('secretResult').classList.add('show');
   document.getElementById('secretResult').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
@@ -727,7 +759,7 @@ function renderUsers(users) {
     const save = button('Simpan edit', '', () => runAdminAction(async () => { const maxSessions = Number(sessionsInput.value); if (!Number.isInteger(maxSessions) || maxSessions < 1 || maxSessions > 1000) throw new Error('Maksimum sesi harus 1–1000.'); await adminFetch(`/admin/users/${encodeURIComponent(user.id)}`, { method: 'PATCH', body: JSON.stringify({ label: labelInput.value.trim(), expiresAt: toExpiry(expiryInput.value), maxSessions }) }); adminMessage('Perubahan pengguna disimpan.', 'info'); await loadUsers(); }));
     edit.append(field('Label / nama', labelInput), field('Kedaluwarsa', expiryInput), field('Maks. sesi', sessionsInput), save);
     const actions = document.createElement('div'); actions.className = 'user-actions';
-    actions.append(button(user.active ? 'Nonaktifkan akses' : 'Aktifkan akses', user.active ? 'danger' : '', () => { if (user.active && !confirm(`Nonaktifkan akses MCP untuk ${user.email}?`)) return; runAdminAction(async () => { await adminFetch(`/admin/users/${encodeURIComponent(user.id)}`, { method: 'PATCH', body: JSON.stringify({ active: !user.active }) }); adminMessage(user.active ? 'Pengguna dinonaktifkan.' : 'Pengguna diaktifkan.', 'info'); await loadUsers(); }); }), button('Rotasi key', '', () => { if (!confirm(`Rotasi key ${user.email}? Key lama langsung tidak berlaku.`)) return; runAdminAction(async () => { const data = await adminFetch(`/admin/users/${encodeURIComponent(user.id)}/rotate`, { method: 'POST' }); adminMessage('Key berhasil dirotasi.', 'info'); await loadUsers(); showSecret(data.key); }); }), button('Nonaktifkan permanen', 'danger', () => { if (!confirm(`Nonaktifkan ${user.email}? Key aktif akan dicabut.`)) return; runAdminAction(async () => { await adminFetch(`/admin/users/${encodeURIComponent(user.id)}`, { method: 'DELETE' }); adminMessage('Pengguna telah dinonaktifkan.', 'info'); await loadUsers(); }); }));
+    actions.append(button(user.active ? 'Nonaktifkan akses' : 'Aktifkan akses', user.active ? 'danger' : '', () => { if (user.active && !confirm(`Nonaktifkan akses untuk ${user.email}?`)) return; runAdminAction(async () => { await adminFetch(`/admin/users/${encodeURIComponent(user.id)}`, { method: 'PATCH', body: JSON.stringify({ active: !user.active }) }); adminMessage(user.active ? 'Pengguna dinonaktifkan.' : 'Pengguna diaktifkan.', 'info'); await loadUsers(); }); }), button('Reset Password', '', () => { if (!confirm(`Reset password ${user.email}?`)) return; runAdminAction(async () => { const data=await adminFetch(`/admin/users/${encodeURIComponent(user.id)}/reset-password`,{method:'POST'});await loadUsers();showSecret(data.password,user.email,'PASSWORD BARU'); }); }), ...(user.keyId?[button('Cabut API Key','danger',()=>{if(!confirm(`Cabut API key ${user.email}?`))return;runAdminAction(async()=>{await adminFetch(`/admin/users/${encodeURIComponent(user.id)}/api-key`,{method:'DELETE'});adminMessage('API key dicabut.','info');await loadUsers();});})]:[]), button('Hapus Pengguna', 'danger', () => { const typed=prompt(`Ketik email ${user.email} untuk menghapus permanen:`); if(typed!==user.email||!confirm(`Hapus permanen ${user.email}?`))return;runAdminAction(async()=>{await adminFetch(`/admin/users/${encodeURIComponent(user.id)}`,{method:'DELETE'});adminMessage('Pengguna telah dihapus permanen.','info');await loadUsers();}); }));
     card.append(summary, edit, actions); list.append(card);
   });
 }
@@ -744,7 +776,7 @@ document.getElementById('userForm').addEventListener('submit', event => { event.
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new Error('Masukkan email pengguna yang valid.');
   if (!Number.isInteger(maxSessions) || maxSessions < 1 || maxSessions > 1000) throw new Error('Maksimum sesi harus 1–1000.');
   const payload = { email, label: document.getElementById('userLabel').value.trim(), expiresAt: toExpiry(document.getElementById('userExpiry').value), maxSessions, active: document.getElementById('userActive').checked };
-  const data = await adminFetch('/admin/users', { method: 'POST', body: JSON.stringify(payload) }); event.target.reset(); document.getElementById('userMaxSessions').value = '1'; document.getElementById('userActive').checked = true; adminMessage(data.key ? 'Pengguna dibuat. Simpan key sekarang.' : 'Data pengguna diperbarui.', 'info'); await loadUsers(); showSecret(data.key);
+  const data = await adminFetch('/admin/users', { method: 'POST', body: JSON.stringify(payload) }); event.target.reset(); document.getElementById('userMaxSessions').value = '1'; document.getElementById('userActive').checked = true; adminMessage(data.password ? 'Pengguna dibuat. Simpan password awal sekarang.' : 'Data pengguna diperbarui.', 'info'); await loadUsers(); showSecret(data.password,data.user?.email||email,'PASSWORD AWAL');
 }); });
 document.getElementById('copySecret').addEventListener('click', () => { const key = document.getElementById('secretKey').textContent; if (key) navigator.clipboard.writeText(key).then(() => showToast('Key MCP disalin')).catch(() => showToast('Gagal menyalin key')); });
 document.getElementById('adminLogout').addEventListener('click', () => document.getElementById('accountLogout').click());
@@ -753,24 +785,18 @@ setAdminState(false);
 
 async function generateSimpleKey() {
   const btn = document.getElementById('generateKeyBtn');
+  if (btn.textContent.includes('Ganti') && !confirm('Mengganti API key akan langsung menonaktifkan key lama. Lanjutkan?')) return;
   setLoading(btn, true);
   try {
-    const r = await fetch(`${BASE}/api/key/generate`, { method: 'POST' });
-    const data = await r.json();
-    if (!r.ok || !data.key) throw new Error(data.error || 'Gagal membuat API key');
-    setApiKey(data.key);
-    await navigator.clipboard.writeText(data.key).catch(() => {});
-    showToast('API key dibuat, aktif, dan disalin');
-  } catch (e) {
-    showToast(e.message);
-  } finally {
-    setLoading(btn, false);
-  }
+    const r = await fetch(`${BASE}/profile/api-key`, { method: 'POST', credentials: 'include', headers:{Accept:'application/json'} });
+    const data = await r.json().catch(()=>null);
+    if(r.status===401){returnToLogin();return} if (!r.ok || !data?.key) throw new Error(data?.error || 'Gagal membuat API key');
+    revealRawKey(data.key);
+    showToast('API key dibuat. Salin sekarang; key hanya ditampilkan satu kali.'); await loadProfile();
+  } catch (e) { showToast(e.message); } finally { setLoading(btn, false); }
 }
-
-function copyCurrentKey() {
-  showToast('API key dikelola oleh admin dan tidak ditampilkan kembali.');
-}
+async function revokeSimpleKey(){if(!confirm('Cabut API key aktif? Key segera tidak berlaku.'))return;try{const r=await fetch(`${BASE}/profile/api-key`, { method:'DELETE', credentials:'include', headers:{Accept:'application/json'} });if(r.status===401){returnToLogin();return}if(!r.ok)throw new Error('Gagal mencabut API key');document.getElementById('credKey').textContent='Belum dibuat';showToast('API key berhasil dicabut.');await loadProfile();}catch(e){showToast(e.message)}}
+function copyCurrentKey() { const key=document.getElementById('credKey').textContent;if(key&&key!=='Belum dibuat')navigator.clipboard.writeText(key).then(()=>showToast('API key disalin')).catch(()=>showToast('Gagal menyalin')); }
 
 async function checkStatus() {
   const dot = document.getElementById('statusDot');
