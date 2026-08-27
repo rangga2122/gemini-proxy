@@ -55,6 +55,12 @@ Setiap pengguna memerlukan **MCP key terpisah** yang harus diminta kepada admin.
 
 Tool tersedia: `chat_text`, `analyze_image`, `generate_image`, `edit_image`, `generate_audio`, `list_voices`, `get_pool_status`, dan `get_service_status`.
 
+### Pengelolaan pengguna MCP (admin)
+
+Di Cosmic Console, buka panel **MCP Connection**, pilih **Login Admin**, lalu masuk dengan akun admin yang telah dikonfigurasi oleh operator. Dari area inline tersebut admin dapat membuat/memperbarui pengguna, mengatur label, masa berlaku, batas sesi dan status, serta merotasi key.
+
+Key MCP mentah hanya muncul sekali saat pengguna pertama kali dibuat atau saat key dirotasi. Salin dan simpan segera di pengelola rahasia; jangan masukkan key atau kredensial admin ke source control. Token sesi admin disimpan hanya di `sessionStorage` tab browser dan dihapus saat logout atau sesi ditolak server.
+
 ## 🔑 Autentikasi
 
 Semua endpoint (kecuali `/` dan `/v1/capture-tokens`) butuh API key. Bisa lewat:

@@ -22,7 +22,7 @@ http:
     cosmic-mcp:
       entryPoints:
         - https
-      rule: Host(`gen.azkazamdigital.com`) && (Path(`/mcp`) || PathPrefix(`/artifacts/`))
+      rule: Host(`gen.azkazamdigital.com`) && (Path(`/mcp`) || PathPrefix(`/artifacts/`) || PathPrefix(`/admin/`) || Path(`/health/mcp`))
       priority: 100
       middlewares:
         - gen-gzip

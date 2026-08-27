@@ -52,9 +52,9 @@ export class KeyStore {
     this.fileVersion=version(await stat(this.file,{bigint:true}));
   }
 
-  async create(label,{limit=30}={}) {
+  async create(label,{limit=30,userId,email}={}) {
     const key='cosmic-mcp-'+randomBytes(24).toString('base64url'),id=randomUUID();
-    this.records.push({id,label,hash:createHash('sha256').update(key).digest('hex'),active:true,createdAt:new Date().toISOString(),limit,usage:0});
+    this.records.push({id,label,hash:createHash('sha256').update(key).digest('hex'),active:true,createdAt:new Date().toISOString(),limit,usage:0,...(userId?{userId,email}:{})});
     await this.save();
     return {key,id};
   }

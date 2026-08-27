@@ -165,6 +165,8 @@ select{cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%
 .mcp-layout{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(280px,.85fr);gap:20px}.mcp-block{background:rgba(0,0,0,.22);border:1px solid var(--border);border-radius:var(--radius-sm);padding:18px}.mcp-block h3{font:600 12px var(--font-mono);text-transform:uppercase;letter-spacing:.08em;color:var(--accent);margin-bottom:12px}
 .mcp-endpoint{display:flex;align-items:center;gap:10px;margin-bottom:12px}.mcp-endpoint code{min-width:0;flex:1;overflow-wrap:anywhere;font:12px var(--font-mono);color:var(--cyan-soft)}.mcp-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}.mcp-actions .btn,.mcp-endpoint .btn{padding:9px 13px;font-size:12px;white-space:nowrap}
 .mcp-tools{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;list-style:none}.mcp-tools li{padding:9px 10px;border:1px solid var(--border);border-radius:6px;font:11px var(--font-mono);color:var(--text-dim)}.mcp-tools strong{display:block;color:var(--text);font-weight:500;margin-bottom:3px;overflow-wrap:anywhere}.mcp-note{margin-top:14px;padding:12px;background:rgba(245,158,11,.06);border:1px solid rgba(245,158,11,.18);border-radius:6px}
+.admin-shell{margin-top:20px;padding-top:20px;border-top:1px solid var(--border)}.admin-bar{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}.admin-bar p{font-size:12px;color:var(--text-dim)}.admin-area{margin-top:16px;padding:18px;background:rgba(0,0,0,.25);border:1px solid var(--border);border-radius:var(--radius-sm)}.admin-area[hidden]{display:none}.admin-form{display:grid;grid-template-columns:repeat(5,minmax(120px,1fr));gap:12px;align-items:end}.admin-login{max-width:560px;grid-template-columns:1fr 1fr auto}.check-field{display:flex;align-items:center;gap:8px;min-height:38px;color:var(--text-dim);font-size:13px}.check-field input{accent-color:var(--violet);width:16px;height:16px}.admin-message{display:none;margin:0 0 14px;padding:10px 12px;border-radius:6px;font-size:13px}.admin-message.show{display:block}.admin-message.error{color:#fecaca;background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.3)}.admin-message.info{color:var(--cyan-soft);background:rgba(34,211,238,.08);border:1px solid rgba(34,211,238,.25)}.secret-result{display:none;margin:16px 0;padding:16px;border:1px solid rgba(245,158,11,.5);background:rgba(245,158,11,.1);border-radius:var(--radius-sm)}.secret-result.show{display:block}.secret-result strong{display:block;color:var(--warn);margin-bottom:6px}.secret-row{display:flex;gap:8px;margin-top:10px}.secret-row code{flex:1;min-width:0;overflow-wrap:anywhere;padding:10px;background:rgba(0,0,0,.35);border-radius:6px;color:var(--cyan-soft);font:12px var(--font-mono);user-select:all}.admin-list{display:grid;gap:12px;margin-top:18px}.user-card{padding:16px;border:1px solid var(--border);border-radius:var(--radius-sm);background:rgba(0,0,0,.2)}.user-summary{display:grid;grid-template-columns:1.4fr 1fr auto;gap:12px;align-items:start}.user-email{font-weight:600;overflow-wrap:anywhere}.user-meta{font:11px/1.7 var(--font-mono);color:var(--text-dim);overflow-wrap:anywhere}.badge{display:inline-block;padding:4px 8px;border-radius:20px;font:10px var(--font-mono);color:var(--success);border:1px solid rgba(16,185,129,.35)}.badge.off{color:var(--error);border-color:rgba(239,68,68,.35)}.user-edit{display:grid;grid-template-columns:1fr 180px 120px auto;gap:8px;align-items:end;margin-top:12px;padding-top:12px;border-top:1px solid var(--border)}.user-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}.user-actions .btn,.user-edit .btn{padding:8px 11px;font-size:11px}.danger{color:#fecaca!important;border-color:rgba(239,68,68,.35)!important}.public-admin-link{font-size:11px!important}
+@media(max-width:900px){.admin-form{grid-template-columns:repeat(2,1fr)}.admin-login{grid-template-columns:1fr 1fr}.admin-login .btn{grid-column:1/-1}.user-edit{grid-template-columns:1fr 1fr}.user-summary{grid-template-columns:1fr auto}}@media(max-width:520px){.admin-form,.admin-login,.user-edit{grid-template-columns:1fr}.admin-login .btn{grid-column:auto}.user-summary{grid-template-columns:1fr}.secret-row{flex-direction:column}.admin-area{padding:14px}}
 @media(max-width:768px){.mcp-layout{grid-template-columns:1fr}.mcp-head{flex-direction:column}.mcp-status{align-self:flex-start}}@media(max-width:480px){.mcp-panel{padding:20px}.mcp-tools{grid-template-columns:1fr}.mcp-endpoint{align-items:flex-start;flex-direction:column}}
 
 /* Footer */
@@ -415,8 +417,31 @@ select{cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%
 <section class="mcp-panel" aria-labelledby="mcpTitle">
   <div class="mcp-head"><div><h2 id="mcpTitle">MCP CONNECTION</h2><p>Koneksi read-only untuk klien AI yang mendukung Model Context Protocol.</p></div><div class="mcp-status" role="status" aria-live="polite"><span id="mcpStatusDot" class="status-dot loading" aria-hidden="true"></span><span id="mcpStatusText">Memeriksa status…</span></div></div>
   <div class="mcp-layout">
-    <div class="mcp-block"><h3>Endpoint MCP</h3><div class="mcp-endpoint"><code id="mcpEndpoint">https://gen.azkazamdigital.com/mcp</code><button type="button" class="btn secondary" id="copyMcpEndpoint"><span>Salin endpoint</span></button></div><p class="mcp-note">MCP memakai key terpisah untuk setiap pengguna. Minta key pribadi kepada admin; tidak tersedia generator key publik. Panel ini tidak menampilkan secret maupun state layanan.</p><div class="mcp-actions"><button type="button" class="btn" id="copyMcpConfig"><span>Salin konfigurasi JSON</span></button></div></div>
+    <div class="mcp-block"><h3>Endpoint MCP</h3><div class="mcp-endpoint"><code id="mcpEndpoint">https://gen.azkazamdigital.com/mcp</code><button type="button" class="btn secondary" id="copyMcpEndpoint"><span>Salin endpoint</span></button></div><p class="mcp-note">MCP memakai key terpisah untuk setiap pengguna. Minta key pribadi kepada admin; tidak tersedia generator key publik. Panel ini tidak menampilkan secret maupun state layanan.</p><div class="mcp-actions"><button type="button" class="btn" id="copyMcpConfig"><span>Salin konfigurasi JSON</span></button><a class="btn secondary public-admin-link" href="#adminMcp"><span>Kelola pengguna</span></a></div></div>
     <div class="mcp-block"><h3>8 Tool Tersedia</h3><ul class="mcp-tools"><li><strong>chat_text</strong>Chat dan respons teks</li><li><strong>analyze_image</strong>Analisis konten gambar</li><li><strong>generate_image</strong>Generasi gambar dari teks</li><li><strong>edit_image</strong>Edit gambar dengan instruksi</li><li><strong>generate_audio</strong>Sintesis audio dari teks</li><li><strong>list_voices</strong>Daftar suara tersedia</li><li><strong>get_pool_status</strong>Status pool layanan</li><li><strong>get_service_status</strong>Status kesehatan layanan</li></ul></div>
+  </div>
+  <div class="admin-shell" id="adminMcp">
+    <div class="admin-bar"><div><h3>ADMIN MCP</h3><p>Kelola akses pengguna MCP. Area ini memerlukan autentikasi admin.</p></div><button type="button" class="btn secondary" id="adminToggle" aria-expanded="false" aria-controls="adminArea"><span>Login Admin</span></button></div>
+    <div class="admin-area" id="adminArea" hidden>
+      <div class="admin-message" id="adminMessage" role="status" aria-live="polite"></div>
+      <form class="admin-form admin-login" id="adminLoginForm">
+        <div class="field"><label for="adminEmail">Email admin</label><input class="input" id="adminEmail" type="email" autocomplete="username" required></div>
+        <div class="field"><label for="adminPassword">Password</label><input class="input" id="adminPassword" type="password" autocomplete="current-password" required></div>
+        <button class="btn" id="adminLoginBtn" type="submit"><span>Masuk</span></button>
+      </form>
+      <div id="adminDashboard" hidden>
+        <div class="admin-bar"><p id="adminSessionLabel">Sesi admin aktif</p><button class="btn secondary" id="adminLogout" type="button"><span>Logout</span></button></div>
+        <form class="admin-form" id="userForm">
+          <div class="field"><label for="userEmail">Email pengguna</label><input class="input" id="userEmail" type="email" required></div>
+          <div class="field"><label for="userLabel">Label / nama</label><input class="input" id="userLabel" maxlength="200"></div>
+          <div class="field"><label for="userExpiry">Kedaluwarsa (opsional)</label><input class="input" id="userExpiry" type="date"></div>
+          <div class="field"><label for="userMaxSessions">Maks. sesi</label><input class="input" id="userMaxSessions" type="number" min="1" max="1000" value="1" required></div>
+          <div><label class="check-field"><input id="userActive" type="checkbox" checked> Aktif</label><button class="btn" id="userSubmit" type="submit"><span>Tambah / perbarui</span></button></div>
+        </form>
+        <div class="secret-result" id="secretResult" role="alert"><strong>Key MCP hanya ditampilkan satu kali</strong><p>Simpan sekarang. Key tidak dapat dilihat kembali setelah panel ini berubah.</p><div class="secret-row"><code id="secretKey"></code><button type="button" class="btn" id="copySecret"><span>Salin key</span></button></div></div>
+        <div class="admin-list" id="adminUsers" aria-live="polite"></div>
+      </div>
+    </div>
   </div>
 </section>
 
@@ -555,6 +580,127 @@ async function checkMcpStatus() {
 document.getElementById('copyMcpEndpoint').addEventListener('click', () => copyText(MCP_ENDPOINT));
 document.getElementById('copyMcpConfig').addEventListener('click', () => copyText(MCP_CONFIG));
 
+// ─── MCP admin ───────────────────────────
+const ADMIN_TOKEN_KEY = 'cosmic_admin_token';
+let adminToken = sessionStorage.getItem(ADMIN_TOKEN_KEY) || '';
+let adminBusy = false;
+const adminArea = document.getElementById('adminArea');
+const adminLoginForm = document.getElementById('adminLoginForm');
+const adminDashboard = document.getElementById('adminDashboard');
+
+function clearSecret() {
+  document.getElementById('secretKey').textContent = '';
+  document.getElementById('secretResult').classList.remove('show');
+}
+function adminMessage(text, type = 'error') {
+  const el = document.getElementById('adminMessage');
+  el.textContent = text || '';
+  el.className = `admin-message${text ? ` show ${type}` : ''}`;
+}
+function setAdminState(loggedIn) {
+  adminLoginForm.hidden = loggedIn;
+  adminDashboard.hidden = !loggedIn;
+  document.getElementById('adminToggle').querySelector('span').textContent = loggedIn ? 'Panel Admin' : 'Login Admin';
+  if (!loggedIn) document.getElementById('adminUsers').replaceChildren();
+}
+function expireAdmin(message = 'Sesi admin berakhir. Silakan login kembali.') {
+  adminToken = '';
+  sessionStorage.removeItem(ADMIN_TOKEN_KEY);
+  clearSecret();
+  setAdminState(false);
+  adminMessage(message);
+}
+function errorMessage(status, data) {
+  if (status === 400) return 'Data tidak valid. Periksa kembali semua isian.';
+  if (status === 401) return 'Sesi tidak sah atau telah berakhir.';
+  if (status === 429) return 'Terlalu banyak permintaan. Tunggu sebentar lalu coba lagi.';
+  if (status >= 500) return 'Layanan admin sedang bermasalah. Coba lagi nanti.';
+  return typeof data?.error === 'string' ? data.error : 'Permintaan gagal. Silakan coba lagi.';
+}
+async function adminFetch(path, options = {}) {
+  const headers = { Accept: 'application/json', ...(options.body ? { 'Content-Type': 'application/json' } : {}), ...(adminToken ? { Authorization: `Bearer ${adminToken}` } : {}) };
+  let response;
+  try { response = await fetch(`${BASE}${path}`, { ...options, headers }); }
+  catch { throw new Error('Tidak dapat terhubung ke layanan admin.'); }
+  let data = null;
+  if (response.status !== 204) { try { data = await response.json(); } catch {} }
+  if (!response.ok) {
+    if (response.status === 401 && path !== '/admin/login') expireAdmin();
+    throw new Error(errorMessage(response.status, data));
+  }
+  return data;
+}
+function toExpiry(date) { return date ? new Date(`${date}T23:59:59.999`).toISOString() : null; }
+function dateInput(iso) { return iso ? iso.slice(0, 10) : ''; }
+function field(label, input) {
+  const wrap = document.createElement('div'); wrap.className = 'field';
+  const lab = document.createElement('label'); lab.textContent = label; lab.htmlFor = input.id;
+  wrap.append(lab, input); return wrap;
+}
+function button(label, kind, action) {
+  const b = document.createElement('button'); b.type = 'button'; b.className = `btn secondary${kind ? ` ${kind}` : ''}`;
+  const s = document.createElement('span'); s.textContent = label; b.append(s); b.addEventListener('click', action); return b;
+}
+async function runAdminAction(action) {
+  if (adminBusy) return;
+  adminBusy = true; clearSecret(); adminMessage('Memproses…', 'info');
+  try { await action(); }
+  catch (e) { adminMessage(e.message); }
+  finally { adminBusy = false; }
+}
+function showSecret(key) {
+  if (!key) return;
+  document.getElementById('secretKey').textContent = key;
+  document.getElementById('secretResult').classList.add('show');
+  document.getElementById('secretResult').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+function renderUsers(users) {
+  const list = document.getElementById('adminUsers'); list.replaceChildren();
+  if (!users.length) { const p = document.createElement('p'); p.className = 'user-meta'; p.textContent = 'Belum ada pengguna MCP.'; list.append(p); return; }
+  users.forEach(user => {
+    const card = document.createElement('article'); card.className = 'user-card';
+    const summary = document.createElement('div'); summary.className = 'user-summary';
+    const identity = document.createElement('div'); const email = document.createElement('div'); email.className = 'user-email'; email.textContent = user.email;
+    const label = document.createElement('div'); label.className = 'user-meta'; label.textContent = user.label || 'Tanpa label'; identity.append(email, label);
+    const meta = document.createElement('div'); meta.className = 'user-meta'; meta.textContent = `Kedaluwarsa: ${user.expiresAt ? new Date(user.expiresAt).toLocaleDateString('id-ID') : 'Tidak dibatasi'} · Maks. sesi: ${user.maxSessions} · Key ID: ${user.keyId || 'Belum ada'}`;
+    const badge = document.createElement('span'); badge.className = `badge${user.active ? '' : ' off'}`; badge.textContent = user.active ? 'AKTIF' : 'NONAKTIF'; summary.append(identity, meta, badge);
+    const edit = document.createElement('div'); edit.className = 'user-edit';
+    const labelInput = document.createElement('input'); labelInput.className = 'input'; labelInput.id = `label-${user.id}`; labelInput.maxLength = 200; labelInput.value = user.label || '';
+    const expiryInput = document.createElement('input'); expiryInput.className = 'input'; expiryInput.id = `expiry-${user.id}`; expiryInput.type = 'date'; expiryInput.value = dateInput(user.expiresAt);
+    const sessionsInput = document.createElement('input'); sessionsInput.className = 'input'; sessionsInput.id = `sessions-${user.id}`; sessionsInput.type = 'number'; sessionsInput.min = '1'; sessionsInput.max = '1000'; sessionsInput.value = user.maxSessions;
+    const save = button('Simpan edit', '', () => runAdminAction(async () => { const maxSessions = Number(sessionsInput.value); if (!Number.isInteger(maxSessions) || maxSessions < 1 || maxSessions > 1000) throw new Error('Maksimum sesi harus 1–1000.'); await adminFetch(`/admin/users/${encodeURIComponent(user.id)}`, { method: 'PATCH', body: JSON.stringify({ label: labelInput.value.trim(), expiresAt: toExpiry(expiryInput.value), maxSessions }) }); adminMessage('Perubahan pengguna disimpan.', 'info'); await loadUsers(); }));
+    edit.append(field('Label / nama', labelInput), field('Kedaluwarsa', expiryInput), field('Maks. sesi', sessionsInput), save);
+    const actions = document.createElement('div'); actions.className = 'user-actions';
+    actions.append(button(user.active ? 'Nonaktifkan akses' : 'Aktifkan akses', user.active ? 'danger' : '', () => { if (user.active && !confirm(`Nonaktifkan akses MCP untuk ${user.email}?`)) return; runAdminAction(async () => { await adminFetch(`/admin/users/${encodeURIComponent(user.id)}`, { method: 'PATCH', body: JSON.stringify({ active: !user.active }) }); adminMessage(user.active ? 'Pengguna dinonaktifkan.' : 'Pengguna diaktifkan.', 'info'); await loadUsers(); }); }), button('Rotasi key', '', () => { if (!confirm(`Rotasi key ${user.email}? Key lama langsung tidak berlaku.`)) return; runAdminAction(async () => { const data = await adminFetch(`/admin/users/${encodeURIComponent(user.id)}/rotate`, { method: 'POST' }); adminMessage('Key berhasil dirotasi.', 'info'); await loadUsers(); showSecret(data.key); }); }), button('Nonaktifkan permanen', 'danger', () => { if (!confirm(`Nonaktifkan ${user.email}? Key aktif akan dicabut.`)) return; runAdminAction(async () => { await adminFetch(`/admin/users/${encodeURIComponent(user.id)}`, { method: 'DELETE' }); adminMessage('Pengguna telah dinonaktifkan.', 'info'); await loadUsers(); }); }));
+    card.append(summary, edit, actions); list.append(card);
+  });
+}
+async function loadUsers() {
+  const data = await adminFetch('/admin/users'); renderUsers(Array.isArray(data?.users) ? data.users : []);
+}
+document.getElementById('adminToggle').addEventListener('click', () => {
+  const opening = adminArea.hidden; adminArea.hidden = !opening; document.getElementById('adminToggle').setAttribute('aria-expanded', String(opening)); clearSecret();
+  if (opening) { setAdminState(Boolean(adminToken)); if (adminToken) runAdminAction(async () => { await loadUsers(); adminMessage('Sesi admin aktif.', 'info'); }); else document.getElementById('adminEmail').focus(); }
+});
+adminLoginForm.addEventListener('submit', event => { event.preventDefault(); runAdminAction(async () => {
+  const email = document.getElementById('adminEmail').value.trim(); const passwordInput = document.getElementById('adminPassword'); const password = passwordInput.value;
+  if (!email || !password) throw new Error('Email dan password wajib diisi.');
+  passwordInput.value = '';
+  const data = await adminFetch('/admin/login', { method: 'POST', body: JSON.stringify({ email, password }) });
+  if (!data?.token) throw new Error('Respons login tidak valid.'); adminToken = data.token; sessionStorage.setItem(ADMIN_TOKEN_KEY, adminToken); setAdminState(true); await loadUsers(); adminMessage('Login berhasil.', 'info');
+}); });
+document.getElementById('userForm').addEventListener('submit', event => { event.preventDefault(); runAdminAction(async () => {
+  const email = document.getElementById('userEmail').value.trim(); const maxSessions = Number(document.getElementById('userMaxSessions').value);
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new Error('Masukkan email pengguna yang valid.');
+  if (!Number.isInteger(maxSessions) || maxSessions < 1 || maxSessions > 1000) throw new Error('Maksimum sesi harus 1–1000.');
+  const payload = { email, label: document.getElementById('userLabel').value.trim(), expiresAt: toExpiry(document.getElementById('userExpiry').value), maxSessions, active: document.getElementById('userActive').checked };
+  const data = await adminFetch('/admin/users', { method: 'POST', body: JSON.stringify(payload) }); event.target.reset(); document.getElementById('userMaxSessions').value = '1'; document.getElementById('userActive').checked = true; adminMessage(data.key ? 'Pengguna dibuat. Simpan key sekarang.' : 'Data pengguna diperbarui.', 'info'); await loadUsers(); showSecret(data.key);
+}); });
+document.getElementById('copySecret').addEventListener('click', () => { const key = document.getElementById('secretKey').textContent; if (key) navigator.clipboard.writeText(key).then(() => showToast('Key MCP disalin')).catch(() => showToast('Gagal menyalin key')); });
+document.getElementById('adminLogout').addEventListener('click', () => runAdminAction(async () => { try { await adminFetch('/admin/logout', { method: 'POST' }); } finally { expireAdmin('Anda telah logout.'); document.getElementById('adminPassword').value = ''; } }));
+window.addEventListener('hashchange', clearSecret);
+setAdminState(Boolean(adminToken));
+
 async function generateSimpleKey() {
   const btn = document.getElementById('generateKeyBtn');
   setLoading(btn, true);
@@ -628,7 +774,8 @@ function showResult(id) {
 
 function showError(id, msg) {
   document.getElementById(id).classList.add('show');
-  document.getElementById(id + 'Body').innerHTML = `<div class="result-error">${msg}</div>`;
+  const body = document.getElementById(id + 'Body'); body.replaceChildren();
+  const error = document.createElement('div'); error.className = 'result-error'; error.textContent = msg; body.append(error);
 }
 
 function copyText(text) {
@@ -720,10 +867,12 @@ async function generateImage() {
     if (count > 1 && data.results) {
       const imgs = data.results.filter(x => x.image).map(x => x.image.dataUrl);
       document.getElementById('resultImageMeta').textContent = `${imgs.length}/${count} images`;
-      body_el.innerHTML = '<div class="result-grid">' + imgs.map(u => `<img src="${u}" onclick="window.open('${u}')">`).join('') + '</div>';
+      const grid = document.createElement('div'); grid.className = 'result-grid';
+      imgs.forEach(url => { const img = document.createElement('img'); img.src = url; img.alt = 'Hasil gambar'; img.addEventListener('click', () => window.open(url, '_blank', 'noopener')); grid.append(img); });
+      body_el.replaceChildren(grid);
     } else if (data.image) {
       document.getElementById('resultImageMeta').textContent = `seed: ${data.seed}`;
-      body_el.innerHTML = `<img src="${data.image.dataUrl}">`;
+      const img = document.createElement('img'); img.src = data.image.dataUrl; img.alt = 'Hasil gambar'; body_el.replaceChildren(img);
     } else {
       throw new Error('No image in response');
     }
@@ -775,7 +924,7 @@ async function analyzeImage() {
 
     showResult('resultVision');
     const text = data.text || data.choices?.[0]?.message?.content || 'No response';
-    document.getElementById('resultVisionBody').innerHTML = `<pre>${text}</pre>`;
+    const pre = document.createElement('pre'); pre.textContent = text; document.getElementById('resultVisionBody').replaceChildren(pre);
   } catch (e) {
     showError('resultVision', e.message);
   } finally {
@@ -801,7 +950,7 @@ async function chatText() {
 
     showResult('resultChat');
     const text = data.text || data.choices?.[0]?.message?.content || 'No response';
-    document.getElementById('resultChatBody').innerHTML = `<pre>${text}</pre>`;
+    const pre = document.createElement('pre'); pre.textContent = text; document.getElementById('resultChatBody').replaceChildren(pre);
   } catch (e) {
     showError('resultChat', e.message);
   } finally {
@@ -827,7 +976,7 @@ async function generateTTS() {
     if (!r.ok) throw new Error(data.error || 'Request failed');
 
     showResult('resultTTS');
-    document.getElementById('resultTTSBody').innerHTML = `<audio controls autoplay src="${data.audio.dataUrl}"></audio>`;
+    const audio = document.createElement('audio'); audio.controls = true; audio.autoplay = true; audio.src = data.audio.dataUrl; document.getElementById('resultTTSBody').replaceChildren(audio);
   } catch (e) {
     showError('resultTTS', e.message);
   } finally {
