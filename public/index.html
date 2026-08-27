@@ -6,7 +6,7 @@
 <title>Gen Console — gen.azkazamdigital.com</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;700;900&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
 *,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
 :root{
@@ -184,8 +184,16 @@ select{cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%
 .toast{position:fixed;bottom:24px;right:24px;background:var(--panel-solid);border:1px solid var(--border-bright);border-radius:var(--radius-sm);padding:12px 20px;font-size:13px;color:var(--text);box-shadow:var(--glow-cyan);z-index:100;transform:translateY(100px);opacity:0;transition:transform 0.3s,opacity 0.3s}
 .toast.show{transform:translateY(0);opacity:1}
 </style>
+<style>
+:root{--void:#0b0c0f;--panel:#14161b;--panel-solid:#14161b;--border:#262a33;--border-bright:#3a3f4c;--violet:#ffb224;--violet-deep:#d98b00;--cyan:#ffb224;--cyan-soft:#ffb224;--text:#edeff3;--text-dim:#9ba3af;--text-mute:#6b7280;--accent:#ffb224;--success:#9fe870;--error:#ff4d3d;--warn:#ffb224;--radius:6px;--radius-sm:4px;--font-display:'Barlow Condensed',sans-serif}
+html{color-scheme:dark}[hidden]{display:none!important}body{background:var(--void);font-size:15px}body::before,body::after{display:none}.app-shell{display:grid;grid-template-columns:216px minmax(0,1fr);min-height:100vh}.side-nav{position:sticky;top:0;height:100vh;border-right:1px solid var(--border);background:#101218}.side-brand{padding:20px 16px;border-bottom:1px solid var(--border)}.side-brand strong{display:block;font:700 24px var(--font-display);letter-spacing:.08em}.side-brand span{font:10px var(--font-mono);color:var(--text-dim)}.nav-list{padding:14px 10px;display:grid;gap:3px}.nav-btn{min-height:44px;border:0;border-radius:4px;background:transparent;color:var(--text-dim);display:flex;align-items:center;gap:11px;padding:0 12px;cursor:pointer;font:600 16px var(--font-display);letter-spacing:.06em}.nav-btn svg,.mobile-nav svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.7}.nav-btn:hover,.nav-btn.active{color:var(--text);background:#1a1d24}.nav-btn.active{box-shadow:inset 2px 0 var(--warn)}.main-shell{min-width:0}.topbar{position:sticky;top:0;z-index:30;min-height:62px;padding:0 clamp(14px,4vw,40px);display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border);background:rgba(11,12,15,.96)}.topbar h1{font:700 21px var(--font-display)}.header-status{border-radius:99px;background:#14161b;backdrop-filter:none}.wrap{max-width:1180px;padding:28px clamp(14px,4vw,40px) 90px}.header{display:none}.hero{text-align:left;margin-bottom:22px}.hero h2{font:700 clamp(30px,4vw,40px)/1.05 var(--font-display);color:var(--text);background:none;-webkit-text-fill-color:initial;margin-bottom:8px}.hero p{margin:0;max-width:65ch;color:#b7bec9}.pool-bar,.creds,.simple-key{justify-content:flex-start;margin-bottom:18px}.pool-label{color:#b7bec9}.pool-value{color:var(--warn)}.simple-key #generateKeyBtn{background:var(--warn);border-color:var(--warn);color:#171204}.simple-key #generateKeyBtn:hover{background:#ffc24d;border-color:#ffc24d}.pool-bar,.cred,.card,.mcp-panel,.code-section{background:var(--panel);backdrop-filter:none;box-shadow:none}.cred-copy{width:44px;height:44px;display:grid;place-items:center;padding:0;flex:none}.card{padding:22px}.card::before{display:none}.card-title h3,.mcp-head h2{font-family:var(--font-display);font-size:20px}.card-icon{border-radius:4px;background:#1a1d24!important;color:var(--warn)!important}.input,.textarea,select{background:#0f1116}.btn{border:1px solid var(--border);border-radius:4px;background:#1a1d24;color:var(--text);font-family:var(--font-display);font-size:15px}.btn::before{display:none}.mode-option.active{background:var(--warn);color:#171204}.grid{grid-template-columns:1fr;margin:0}.card{display:none}.card.view-active{display:grid;grid-template-columns:minmax(280px,410px) minmax(0,1fr);gap:0 20px}.card.view-active .card-head,.card.view-active>.card-endpoint,.card.view-active>.card-body{grid-column:1}.card.view-active>.result{grid-column:2;grid-row:1/5;margin-top:0}.result.show{border:1px solid var(--border)}.mcp-panel,.code-section{display:none}.mcp-panel.view-active,.code-section.view-active{display:block}.footer{display:none}.mobile-nav,.more-tray{display:none}.toast{bottom:88px;box-shadow:none}
+@media(max-width:900px){.app-shell{display:block}.side-nav{display:none}.mobile-nav{display:flex;position:fixed;z-index:50;bottom:0;left:0;right:0;min-height:68px;padding-bottom:env(safe-area-inset-bottom);background:#101218;border-top:1px solid var(--border)}.mobile-nav button{flex:1;min-width:0;min-height:56px;border:0;background:transparent;color:var(--text-dim);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;font:600 11px var(--font-display)}.mobile-nav button.active{color:var(--warn);background:#1a1d24}.more-tray.open{display:grid;position:fixed;z-index:49;left:12px;right:12px;bottom:76px;grid-template-columns:repeat(2,1fr);gap:4px;padding:8px;background:#14161b;border:1px solid var(--border);border-radius:6px}.card.view-active{display:block}.card.view-active>.result{margin-top:16px}.mcp-layout{grid-template-columns:1fr}}
+@media(max-width:560px){.wrap{padding-left:14px;padding-right:14px}.card,.mcp-panel{padding:16px}.btn{min-height:44px}.card-body>.btn{width:100%}.pool-bar{display:grid!important;grid-template-columns:1fr 1fr}.creds,.creds .cred,.simple-key,.simple-key .cred{width:100%;min-width:0}.creds .cred,.simple-key .cred{padding:12px}.cred-value{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.simple-key .btn{width:100%}}@media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;animation:none!important}}
+</style>
 </head>
 <body>
+<!-- KONTRAK DESAIN: Gen Console memakai bahasa visual dashboard SBO: latar arang, panel instrumen berbingkai tipis, aksen amber, tipografi kondens untuk navigasi, dan monospace hanya untuk data teknis. Desktop memiliki sidebar 216px dan topbar sticky; mobile memakai navigasi bawah dengan tray Lainnya. Konten berbahasa Indonesia, ikon tombol berupa SVG authored, target sentuh minimal 44px, serta layout tanpa overflow. Semua ID, endpoint, autentikasi, admin MCP, API key, gambar, vision, chat, dan audio tetap menjadi kontrak perilaku yang tidak boleh diubah. -->
+<div class="app-shell"><aside class="side-nav"><div class="side-brand"><strong>GEN CONSOLE</strong><span>gen.azkazamdigital.com</span></div><nav class="nav-list" id="desktopNav" aria-label="Navigasi utama"></nav></aside><main class="main-shell"><header class="topbar"><h1 id="currentViewTitle">Ringkasan</h1><div class="header-status" role="status" aria-live="polite"><span id="topStatusDot" class="status-dot loading"></span><span id="topStatusText">Memeriksa layanan…</span></div></header>
 <div class="wrap">
 
 <!-- Header -->
@@ -214,8 +222,8 @@ select{cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%
 
 <!-- Hero -->
 <section class="hero">
-  <h2>Cosmic AI Console</h2>
-  <p>AI proxy untuk generate gambar, analisa visual, chat teks, dan sintesis suara — semua dari satu endpoint dengan satu API key.</p>
+  <h2>Ruang kerja AI terpadu</h2>
+  <p>Generate gambar, analisis visual, chat teks, dan sintesis suara dari satu layanan operasional.</p>
 </section>
 
 <!-- Credentials -->
@@ -295,7 +303,7 @@ select{cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%
         </div>
       </div>
       <button class="btn" id="btnImage" onclick="generateImage()">
-        <span>⚡ Generate</span>
+        <span>Buat gambar</span>
       </button>
     </div>
     <div class="result" id="resultImage">
@@ -324,7 +332,7 @@ select{cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%
         <label>Upload Image</label>
         <label class="upload" id="visionUpload" onchange="handleFile('vision')">
           <input type="file" accept="image/*" id="visionFile">
-          <p>📁 Click to upload or drop image</p>
+          <p>Klik untuk unggah atau letakkan gambar</p>
           <p class="filename" id="visionFileName" style="display:none"></p>
         </label>
       </div>
@@ -333,7 +341,7 @@ select{cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%
         <textarea class="textarea" id="visionPrompt" placeholder="Deskripsikan gambar ini secara detail"></textarea>
       </div>
       <button class="btn" id="btnVision" onclick="analyzeImage()">
-        <span>🔍 Analyze</span>
+        <span>Analisis gambar</span>
       </button>
     </div>
     <div class="result" id="resultVision">
@@ -360,7 +368,7 @@ select{cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%
         <textarea class="textarea" id="chatPrompt" placeholder="Jelaskan apa itu machine learning dalam bahasa Indonesia" style="min-height:100px"></textarea>
       </div>
       <button class="btn" id="btnChat" onclick="chatText()">
-        <span>💬 Send</span>
+        <span>Kirim pesan</span>
       </button>
     </div>
     <div class="result" id="resultChat">
@@ -402,7 +410,7 @@ select{cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%
         </select>
       </div>
       <button class="btn" id="btnTTS" onclick="generateTTS()">
-        <span>🎙️ Synthesize</span>
+        <span>Buat audio</span>
       </button>
     </div>
     <div class="result" id="resultTTS">
@@ -536,12 +544,38 @@ response = client.chat.completions.create(
 </footer>
 
 </div>
+<nav class="more-tray" id="moreTray" aria-label="Navigasi lainnya"></nav><nav class="mobile-nav" id="mobileNav" aria-label="Navigasi mobile"></nav>
+</main></div>
 
 <!-- Toast -->
 <div class="toast" id="toast"></div>
 
 <script>
 const BASE = window.location.origin;
+const DASH_VIEWS = [
+  ['ringkasan','Ringkasan','card-ringkasan'],['gambar','Gambar','cardImage'],['analisis','Analisis','cardVision'],['chat','Chat','cardChat'],['audio','Audio','cardTTS'],['mcp','MCP','mcp'],['pengguna','Pengguna','adminMcp'],['dokumentasi','Dokumentasi','docs']
+];
+const navIcon = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M8 9h8M8 13h8M8 17h5"/></svg>';
+function navigateView(id, updateHash = true) {
+  if (!DASH_VIEWS.some(v => v[0] === id)) id = 'ringkasan';
+  document.querySelectorAll('.card,.mcp-panel,.code-section').forEach(el => el.classList.remove('view-active'));
+  document.querySelector('.hero').hidden = id !== 'ringkasan'; document.querySelector('.pool-bar').hidden = id !== 'ringkasan'; document.querySelector('.creds').hidden = id !== 'ringkasan'; document.querySelector('.simple-key').hidden = id !== 'ringkasan';
+  const targets = {gambar:'cardImage',analisis:'cardVision',chat:'cardChat',audio:'cardTTS',mcp:'mcpTitle',pengguna:'adminMcp',dokumentasi:'codeCurl'};
+  const target = targets[id] && document.getElementById(targets[id]); if (target) (target.closest('.card,.mcp-panel,.code-section') || target).classList.add('view-active');
+  document.querySelectorAll('[data-view]').forEach(b => { const active=b.dataset.view === id; b.classList.toggle('active', active); if(active) b.setAttribute('aria-current','page'); else b.removeAttribute('aria-current'); });
+  document.getElementById('currentViewTitle').textContent = DASH_VIEWS.find(v => v[0] === id)[1]; document.getElementById('moreTray').classList.remove('open');
+  if (id === 'pengguna') { document.getElementById('adminArea').hidden = false; document.getElementById('adminToggle').setAttribute('aria-expanded','true'); }
+  if (updateHash) history.replaceState(null, '', '#' + id);
+}
+function buildNavigation() {
+  const make = ([id,label]) => { const b=document.createElement('button'); b.type='button'; b.className='nav-btn'; b.dataset.view=id; b.innerHTML=navIcon+'<span>'+label+'</span>'; b.onclick=()=>navigateView(id); return b; };
+  DASH_VIEWS.forEach(v=>document.getElementById('desktopNav').append(make(v)));
+  DASH_VIEWS.slice(0,4).forEach(v=>document.getElementById('mobileNav').append(make(v)));
+  const more=document.createElement('button'); more.type='button'; more.innerHTML=navIcon+'<span>Lainnya</span>'; more.onclick=()=>document.getElementById('moreTray').classList.toggle('open'); document.getElementById('mobileNav').append(more);
+  DASH_VIEWS.slice(4).forEach(v=>document.getElementById('moreTray').append(make(v)));
+  const hash=location.hash.slice(1); navigateView(hash==='adminMcp'?'pengguna':hash,false);
+}
+window.addEventListener('hashchange',()=>navigateView(location.hash.slice(1)==='adminMcp'?'pengguna':location.hash.slice(1),false));
 const MCP_ENDPOINT = 'https://gen.azkazamdigital.com/mcp';
 const MCP_CONFIG = JSON.stringify({ mcpServers: { cosmicAI: { url: MCP_ENDPOINT, headers: { Authorization: 'Bearer YOUR_MCP_KEY' } } } }, null, 2);
 let activeCredential = localStorage.getItem('gen_api_key') || '';
@@ -726,17 +760,19 @@ function copyCurrentKey() {
 async function checkStatus() {
   const dot = document.getElementById('statusDot');
   const txt = document.getElementById('statusText');
+  const topDot = document.getElementById('topStatusDot');
+  const topTxt = document.getElementById('topStatusText');
   try {
     const r = await fetch(`${BASE}/api/health`);
     if (!r.ok) throw new Error();
     const health = await r.json();
     if (health.tokensReady) {
-      dot.className = 'status-dot'; txt.textContent = '● Online — Token Valid'; txt.style.color = 'var(--success)';
+      dot.className = 'status-dot'; txt.textContent = '● Online — Token Valid'; txt.style.color = 'var(--success)'; topDot.className = 'status-dot'; topTxt.textContent = 'GEN / OPERASIONAL';
     } else {
-      dot.className = 'status-dot loading'; txt.textContent = '● Server Online — Token Belum Ada'; txt.style.color = 'var(--warn)';
+      dot.className = 'status-dot loading'; txt.textContent = '● Server Online — Token Belum Ada'; txt.style.color = 'var(--warn)'; topDot.className = 'status-dot loading'; topTxt.textContent = 'TOKEN BELUM SIAP';
     }
   } catch {
-    dot.className = 'status-dot offline'; txt.textContent = '● Server Offline'; txt.style.color = 'var(--error)';
+    dot.className = 'status-dot offline'; txt.textContent = '● Server Offline'; txt.style.color = 'var(--error)'; topDot.className = 'status-dot offline'; topTxt.textContent = 'GEN / OFFLINE';
   }
 }
 
@@ -994,6 +1030,7 @@ function showCode(lang, btn) {
 }
 
 // ─── Start ───────────────────────────────
+buildNavigation();
 init();
 </script>
 </body>
