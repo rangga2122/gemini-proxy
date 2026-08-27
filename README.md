@@ -36,6 +36,25 @@ node server.js
 | `POST` | `/v1/audio/speech` | Text-to-speech (TTS) |
 | `GET`  | `/v1/tts/voices` | Daftar voice TTS |
 
+## 🔌 MCP Connection
+
+Endpoint MCP produksi: `https://gen.azkazamdigital.com/mcp` (health publik: `GET /health/mcp`).
+
+Setiap pengguna memerlukan **MCP key terpisah** yang harus diminta kepada admin. Tidak ada generator key publik; jangan membagikan key atau memasukkannya ke source control.
+
+```json
+{
+  "mcpServers": {
+    "cosmicAI": {
+      "url": "https://gen.azkazamdigital.com/mcp",
+      "headers": { "Authorization": "Bearer YOUR_MCP_KEY" }
+    }
+  }
+}
+```
+
+Tool tersedia: `chat_text`, `analyze_image`, `generate_image`, `edit_image`, `generate_audio`, `list_voices`, `get_pool_status`, dan `get_service_status`.
+
 ## 🔑 Autentikasi
 
 Semua endpoint (kecuali `/` dan `/v1/capture-tokens`) butuh API key. Bisa lewat:

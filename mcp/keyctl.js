@@ -1,0 +1,2 @@
+#!/usr/bin/env node
+import{join}from'node:path';import{KeyStore}from'./lib/auth.js';const s=new KeyStore(join(process.env.MCP_STATE_DIR||join(process.cwd(),'mcp-state'),'keys.json'));await s.load();const [cmd,arg]=process.argv.slice(2);if(cmd==='create'){const x=await s.create(arg||'user',{limit:Number(process.env.MCP_RATE_LIMIT||30)});console.log(JSON.stringify(x))}else if(cmd==='revoke'){await s.revoke(arg);console.log('revoked')}else{console.error('usage: keyctl.js create <label> | revoke <id>');process.exitCode=2}

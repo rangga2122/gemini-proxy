@@ -6,6 +6,8 @@ node_modules/
 .env.*
 token-pool.json
 api-keys.json
+mcp-state/
+**/mcp-state/
 
 # Browser profiles & screenshots
 google-profiles/

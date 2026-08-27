@@ -1,0 +1,62 @@
+http:
+  routers:
+    gen-http:
+      entryPoints:
+        - http
+      rule: Host(`gen.azkazamdigital.com`)
+      middlewares:
+        - gen-redirect
+      service: gen-svc
+
+    gen-https:
+      entryPoints:
+        - https
+      rule: Host(`gen.azkazamdigital.com`)
+      priority: 1
+      middlewares:
+        - gen-gzip
+      service: gen-svc
+      tls:
+        certResolver: letsencrypt
+
+    cosmic-mcp:
+      entryPoints:
+        - https
+      rule: Host(`gen.azkazamdigital.com`) && (Path(`/mcp`) || PathPrefix(`/artifacts/`))
+      priority: 100
+      middlewares:
+        - gen-gzip
+      service: cosmic-mcp-svc
+      tls:
+        certResolver: letsencrypt
+
+    cosmic-mcp-health:
+      entryPoints:
+        - https
+      rule: Host(`gen.azkazamdigital.com`) && Path(`/health/mcp`)
+      priority: 110
+      middlewares:
+        - cosmic-mcp-health-rewrite
+      service: cosmic-mcp-svc
+      tls:
+        certResolver: letsencrypt
+
+  middlewares:
+    gen-redirect:
+      redirectScheme:
+        scheme: https
+    gen-gzip:
+      compress: {}
+    cosmic-mcp-health-rewrite:
+      replacePath:
+        path: /health
+
+  services:
+    gen-svc:
+      loadBalancer:
+        servers:
+          - url: http://host.docker.internal:3100
+    cosmic-mcp-svc:
+      loadBalancer:
+        servers:
+          - url: http://host.docker.internal:3101
