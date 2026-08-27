@@ -5,6 +5,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {scryptSync} from 'node:crypto';
 import {createApp} from '../server.js';
+import {DashboardAuth} from '../lib/admin.js';
 
 const password='correct horse battery staple', salt='test-salt';
 const hash=scryptSync(password,salt,32).toString('hex');
@@ -18,6 +19,35 @@ async function fixture(extra={}) {
 }
 async function login(request,email='admin@example.com',pass=password){return request('/admin/login',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({email,password:pass})})}
 const auth=t=>({authorization:`Bearer ${t}`,'content-type':'application/json'});
+
+test('dashboard sessions persist hash-only, expire, revoke, and revalidate managed users',async()=>{
+  let now=1_700_000_000_000;const dir=await mkdtemp(join(tmpdir(),'dashboard-auth-'));const file=join(dir,'sessions.json');
+  const users={get:id=>id==='u1'?{id,email:'u@example.com',label:'U',active:true,expiresAt:null,keyId:'k1',maxSessions:1}:null};
+  const keys={records:[{id:'k1',active:true,userId:'u1'}],reloadIfChanged:async()=>{}};
+  const sessions=new DashboardAuth(file,{users,keys,now:()=>now,ttlMs:1000});await sessions.load();
+  const token=await sessions.create({role:'user',userId:'u1',keyId:'k1'});assert.ok(token.length>=32);
+  const disk=await readFile(file,'utf8');assert.equal(disk.includes(token),false);assert.equal(disk.includes('credential'),false);
+  assert.equal((await sessions.validate(token)).role,'user');keys.records[0].active=false;assert.equal(await sessions.validate(token),null);
+  keys.records[0].active=true;const second=await sessions.create({role:'admin',user:{email:'admin@example.com'}});await sessions.logout(second);assert.equal(await sessions.validate(second),null);
+  const expiring=await sessions.create({role:'admin',user:{email:'admin@example.com'}});now+=1001;assert.equal(await sessions.validate(expiring),null);
+  const reloaded=new DashboardAuth(file,{users,keys,now:()=>now,ttlMs:1000});await reloaded.load();assert.equal(await reloaded.validate(token),null);
+});
+
+test('dashboard auth HTTP supports both roles, cookies, generic failures, revalidation, and admin authorization',async t=>{
+  let now=1_700_000_000_000;const f=await fixture({now:()=>now});t.after(()=>f.app.close());
+  const legacy=(await(await login(f.request)).json()).token;let r=await f.request('/admin/users',{method:'POST',headers:auth(legacy),body:JSON.stringify({email:'user@example.com',label:'User'})});const made=await r.json();
+  const signIn=body=>f.request('/auth/login',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)});
+  r=await signIn({email:'admin@example.com',credential:password});assert.equal(r.status,200);assert.equal((await r.json()).role,'admin');const adminCookie=r.headers.get('set-cookie');assert.match(adminCookie,/HttpOnly/i);assert.match(adminCookie,/Secure/i);assert.match(adminCookie,/SameSite=Lax/i);
+  assert.equal((await f.request('/auth/session',{headers:{cookie:adminCookie}})).status,200);assert.equal((await f.request('/admin/users',{headers:{cookie:adminCookie}})).status,200);
+  r=await signIn({email:' USER@example.com ',credential:made.key});assert.equal(r.status,200);const userBody=await r.json();assert.equal(userBody.role,'user');assert.equal(userBody.user.email,'user@example.com');assert.equal(JSON.stringify(userBody).includes(made.key),false);const userCookie=r.headers.get('set-cookie');
+  assert.equal((await f.request('/admin/users',{headers:{cookie:userCookie}})).status,403);assert.equal((await f.request('/admin/users')).status,401);
+  r=await signIn({email:'user@example.com',credential:made.key});assert.equal(r.status,429);assert.deepEqual(await r.json(),{error:'Session limit reached'});
+  r=await f.request('/auth/logout',{method:'POST',headers:{cookie:userCookie}});assert.equal(r.status,204);
+  r=await signIn({email:'user@example.com',credential:made.key});assert.equal(r.status,200);const replacementCookie=r.headers.get('set-cookie');assert.equal((await f.request('/auth/session',{headers:{cookie:replacementCookie}})).status,200);
+  for(const body of [{email:'wrong@example.com',credential:made.key},{email:'user@example.com',credential:'bad-key'}]){r=await signIn(body);assert.equal(r.status,401);assert.deepEqual(await r.json(),{error:'Invalid credentials'})}
+  await f.request(`/admin/users/${made.user.id}`,{method:'PATCH',headers:auth(legacy),body:JSON.stringify({active:false})});assert.equal((await f.request('/auth/session',{headers:{cookie:replacementCookie}})).status,401);
+  r=await f.request('/auth/logout',{method:'POST',headers:{cookie:adminCookie}});assert.equal(r.status,204);assert.match(r.headers.get('set-cookie'),/Max-Age=0/i);assert.equal((await f.request('/auth/session',{headers:{cookie:adminCookie}})).status,401);
+});
 
 test('admin rejects wrong email/password generically; login, logout and expiry',async t=>{
   let now=1_700_000_000_000; const f=await fixture({now:()=>now,adminSessionTtlMs:1000});t.after(()=>f.app.close());

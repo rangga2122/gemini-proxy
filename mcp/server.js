@@ -2,7 +2,7 @@ import http from 'node:http';
 import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {KeyStore} from './lib/auth.js';
-import {AdminAuth,UserStore,publicUser,validUserInput} from './lib/admin.js';
+import {AdminAuth,DashboardAuth,UserStore,normalizeEmail,publicUser,validUserInput} from './lib/admin.js';
 import {FixedWindow} from './lib/limits.js';
 import {ArtifactStore} from './lib/artifacts.js';
 import {GenClient} from './lib/gen-client.js';
@@ -14,17 +14,21 @@ export async function createApp(o={}){
   const state=o.stateDir||process.env.MCP_STATE_DIR||join(process.cwd(),'mcp-state'),now=o.now||Date.now;
   const keys=new KeyStore(join(state,'keys.json')),users=new UserStore(join(state,'users.json'),{now});
   const admin=new AdminAuth(join(state,'admin-sessions.json'),{email:o.adminEmail??process.env.ADMIN_EMAIL,salt:o.adminPasswordSalt??process.env.ADMIN_PASSWORD_SALT,hash:o.adminPasswordHash??process.env.ADMIN_PASSWORD_HASH,ttlMs:Number(o.adminSessionTtlMs??process.env.ADMIN_SESSION_TTL_MS??28800000),now});
+  const dashboard=new DashboardAuth(join(state,'dashboard-sessions.json'),{users,keys,ttlMs:Number(o.dashboardSessionTtlMs??process.env.DASHBOARD_SESSION_TTL_MS??28800000),now});
   const artifacts=o.artifacts||new ArtifactStore(join(state,'artifacts'));
-  await Promise.all([keys.load(),users.load(),admin.load(),artifacts.init()]);
+  await Promise.all([keys.load(),users.load(),admin.load(),dashboard.load(),artifacts.init()]);
   const cleanupIntervalMs=positive(o.artifactCleanupIntervalMs??process.env.ARTIFACT_CLEANUP_INTERVAL_MS,900000);let cleanupRunning=null;
   const cleanup=()=>cleanupRunning||(cleanupRunning=Promise.resolve().then(()=>artifacts.cleanup()).catch(()=>{}).finally(()=>cleanupRunning=null));await cleanup();
   const artifactCleanupTimer=setInterval(cleanup,cleanupIntervalMs);artifactCleanupTimer.unref();
-  const tools=createTools(new GenClient({baseUrl:o.genUrl||process.env.GEN_URL,apiKey:o.genKey||process.env.GEN_API_KEY}),artifacts,{publicBaseUrl:o.publicBaseUrl||process.env.PUBLIC_BASE_URL||'',limits:o.limits});
+  const gen=new GenClient({baseUrl:o.genUrl||process.env.GEN_URL,apiKey:o.genKey||process.env.GEN_API_KEY});
+  const tools=createTools(gen,artifacts,{publicBaseUrl:o.publicBaseUrl||process.env.PUBLIC_BASE_URL||'',limits:o.limits});
   const rate=new FixedWindow(now,{maxKeys:o.rateLimitMaxKeys||10000}),adminRate=new FixedWindow(now,{maxKeys:10000});let closing=false;
   const server=http.createServer(async(req,res)=>{security(res);try{
     const url=new URL(req.url||'/','http://localhost');
     if(req.method==='GET'&&url.pathname==='/health')return json(res,closing?503:200,{status:closing?'stopping':'ok'});
-    if(url.pathname.startsWith('/admin/'))return await handleAdmin(req,res,url,{admin,users,keys,adminRate,now,o});
+    if(url.pathname.startsWith('/auth/'))return await handleAuth(req,res,url,{admin,dashboard,users,keys,adminRate,now,o});
+    if(url.pathname.startsWith('/dashboard/'))return await handleDashboard(req,res,url,{dashboard,gen});
+    if(url.pathname.startsWith('/admin/'))return await handleAdmin(req,res,url,{admin,dashboard,users,keys,adminRate,now,o});
     const match=url.pathname.match(/^\/artifacts\/([a-f0-9]{32})$/);
     if(req.method==='GET'&&match){const a=await artifacts.get(match[1]);if(!a){res.writeHead(404);return res.end()}res.writeHead(200,{'content-type':a.mime,'cache-control':'private, max-age=60','content-disposition':`attachment; filename="${match[1]}.${extension(a.mime)}"`});return res.end(a.data)}
     if(req.method!=='POST'||url.pathname!=='/mcp'){res.writeHead(404);return res.end()}if(closing){res.writeHead(503);return res.end()}
@@ -35,7 +39,37 @@ export async function createApp(o={}){
     const answer=await dispatch(query,tools);if(answer===null){res.writeHead(202);return res.end()}return json(res,200,answer);
   }catch{return json(res,500,{error:'Internal error'})}});
   async function close(){if(closing)return;closing=true;clearInterval(artifactCleanupTimer);await cleanupRunning;tools.close?.();await new Promise(resolve=>server.close(()=>resolve()))}
-  return {server,keys,users,admin,artifacts,tools,artifactCleanupTimer,close};
+  return {server,keys,users,admin,dashboard,artifacts,tools,artifactCleanupTimer,close};
+}
+
+const DASHBOARD_ROUTES=new Map([
+  ['POST /dashboard/v1/images/generations','/v1/images/generations'],
+  ['POST /dashboard/v1/images/variations','/v1/images/variations'],
+  ['POST /dashboard/v1/chat/completions','/v1/chat/completions'],
+  ['POST /dashboard/v1/audio/speech','/v1/audio/speech'],
+  ['GET /dashboard/v1/tts/voices','/v1/tts/voices'],
+  ['GET /dashboard/v1/status','/v1/status']
+]);
+async function handleDashboard(req,res,url,{dashboard,gen}){
+  const path=DASHBOARD_ROUTES.get(`${req.method} ${url.pathname}`);if(!path)return notFound(res);
+  if(!await dashboard.validate(sessionCookie(req)))return unauthorized(res);
+  let value; if(req.method==='POST'){try{value=JSON.parse(await body(req,MAX))}catch{return json(res,400,{error:'Invalid request'})}}
+  try{const result=await gen.request(path,{method:req.method,body:value});if(result.json!==undefined)return json(res,200,result.json);res.writeHead(200,{'content-type':result.mime});return res.end(result.data)}catch{return json(res,502,{error:'Backend unavailable'})}
+}
+
+async function handleAuth(req,res,url,c){
+  const ip=req.socket.remoteAddress||'unknown';
+  if(req.method==='POST'&&url.pathname==='/auth/login'){
+    const limit=c.adminRate.take(`dashboard-login:${ip}`,Number(c.o.adminLoginRateLimit||10));if(!limit.ok)return json(res,429,{error:'Too many requests'});
+    const v=await jsonBody(req);if(!v||Object.keys(v).some(k=>!['email','credential'].includes(k))||typeof v.email!=='string'||typeof v.credential!=='string')return json(res,400,{error:'Invalid request'});
+    let identity=null,legacy=await c.admin.login(v.email,v.credential);if(legacy){await c.admin.logout(legacy);identity={role:'admin',user:{email:c.admin.email}}}
+    if(!identity){const record=await c.keys.authenticate(v.credential),user=record?.userId&&c.users.get(record.userId);if(user&&normalizeEmail(v.email)===user.email&&user.active&&(user.expiresAt===null||Date.parse(user.expiresAt)>c.now())&&user.keyId===record.id)identity={role:'user',userId:user.id,keyId:record.id}}
+    if(!identity)return json(res,401,{error:'Invalid credentials'});const token=await c.dashboard.create(identity);if(!token)return json(res,429,{error:'Session limit reached'});const session=await c.dashboard.validate(token);res.setHeader('set-cookie',sessionCookieHeader(token));return json(res,200,{authenticated:true,...session});
+  }
+  const token=sessionCookie(req),session=await c.dashboard.validate(token);
+  if(req.method==='GET'&&url.pathname==='/auth/session')return session?json(res,200,{authenticated:true,...session}):unauthorized(res);
+  if(req.method==='POST'&&url.pathname==='/auth/logout'){if(token)await c.dashboard.logout(token);res.setHeader('set-cookie',sessionCookieHeader('',true));res.writeHead(204);return res.end()}
+  return notFound(res);
 }
 
 async function handleAdmin(req,res,url,c){
@@ -46,7 +80,7 @@ async function handleAdmin(req,res,url,c){
     const value=await jsonBody(req);if(!value||Object.keys(value).some(k=>!['email','password'].includes(k))||typeof value.email!=='string'||typeof value.password!=='string')return json(res,400,{error:'Invalid request'});
     const token=await c.admin.login(value.email,value.password);return token?json(res,200,{token,expiresInMs:c.admin.ttlMs}):json(res,401,{error:'Invalid credentials'});
   }
-  const token=bearer(req);if(!token||!await c.admin.validate(token))return unauthorized(res);
+  const token=bearer(req),legacy=token&&await c.admin.validate(token),session=!legacy&&await c.dashboard.validate(sessionCookie(req));if(!legacy&&!session)return unauthorized(res);if(session&&session.role!=='admin')return json(res,403,{error:'Forbidden'});
   if(req.method==='POST'&&url.pathname==='/admin/logout'){await c.admin.logout(token);res.writeHead(204);return res.end()}
   if(req.method==='GET'&&url.pathname==='/admin/users')return json(res,200,{users:c.users.list()});
   if(req.method==='POST'&&url.pathname==='/admin/users'){
@@ -65,6 +99,8 @@ async function handleAdmin(req,res,url,c){
 async function jsonBody(req){try{const raw=await body(req,ADMIN_MAX);return JSON.parse(raw)}catch{return null}}
 function body(req,max){return new Promise((resolve,reject)=>{let n=0,a=[];req.on('data',chunk=>{n+=chunk.length;if(n>max){reject(new Error('too large'));req.destroy()}else a.push(chunk)});req.on('end',()=>resolve(Buffer.concat(a).toString()));req.on('error',reject)})}
 function bearer(req){return req.headers.authorization?.match(/^Bearer ([A-Za-z0-9_-]{20,})$/)?.[1]}
+function sessionCookie(req){const raw=req.headers.cookie;return typeof raw==='string'?raw.split(';').map(x=>x.trim()).find(x=>x.startsWith('dashboard_session='))?.slice('dashboard_session='.length):undefined}
+function sessionCookieHeader(token,clear=false){return `dashboard_session=${token}; Path=/; HttpOnly; Secure; SameSite=Lax${clear?'; Max-Age=0':''}`}
 function json(res,status,value){res.writeHead(status,{'content-type':'application/json'});res.end(JSON.stringify(value))}function unauthorized(res){return json(res,401,{error:'Unauthorized'})}function notFound(res){res.writeHead(404);res.end()}
 function positive(v,fallback){v=Number(v);return Number.isFinite(v)&&v>0?v:fallback}
 function security(res){res.setHeader('x-content-type-options','nosniff');res.setHeader('referrer-policy','no-referrer');res.setHeader('x-frame-options','DENY');res.setHeader('content-security-policy',"default-src 'none'; frame-ancestors 'none'");res.setHeader('cache-control','no-store')}

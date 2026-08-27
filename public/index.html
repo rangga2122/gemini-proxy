@@ -183,6 +183,7 @@ select{cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%
 
 .toast{position:fixed;bottom:24px;right:24px;background:var(--panel-solid);border:1px solid var(--border-bright);border-radius:var(--radius-sm);padding:12px 20px;font-size:13px;color:var(--text);box-shadow:var(--glow-cyan);z-index:100;transform:translateY(100px);opacity:0;transition:transform 0.3s,opacity 0.3s}
 .toast.show{transform:translateY(0);opacity:1}
+.auth-screen{position:relative;z-index:2;min-height:100vh}.auth-loading{display:grid;place-items:center;color:var(--text-dim);font:13px var(--font-mono)}.public-nav{height:72px;max-width:1180px;margin:auto;padding:0 22px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border)}.public-brand{font:700 25px var(--font-display);letter-spacing:.08em}.landing-main{max-width:1180px;margin:auto;padding:clamp(70px,10vw,130px) 22px}.landing-copy{max-width:760px}.landing-kicker{color:var(--warn);font:600 12px var(--font-mono);letter-spacing:.12em}.landing-copy h1{font:700 clamp(48px,8vw,86px)/.95 var(--font-display);letter-spacing:.01em;margin:18px 0}.landing-copy>p{max-width:650px;color:#b7bec9;font-size:18px;line-height:1.7}.landing-actions{margin-top:30px;display:flex;gap:12px}.capabilities{margin-top:80px;display:grid;grid-template-columns:repeat(4,1fr);gap:12px}.capability{border:1px solid var(--border);background:var(--panel);padding:22px;border-radius:var(--radius)}.capability strong{display:block;font:700 20px var(--font-display);margin-bottom:8px}.capability span{color:var(--text-dim);font-size:13px;line-height:1.5}.login-wrap{min-height:100vh;display:grid;place-items:center;padding:22px}.login-card{width:min(100%,430px);padding:30px;border:1px solid var(--border);background:var(--panel);border-radius:var(--radius)}.login-card h1{font:700 32px var(--font-display);margin:15px 0 5px}.login-card>p{color:var(--text-dim);margin-bottom:24px}.login-form{display:grid;gap:16px}.login-error{min-height:20px;color:#ff8a80;font-size:13px}.login-back{margin-top:14px;width:100%}.account-box{display:flex;align-items:center;gap:10px}.role-badge{padding:4px 8px;border:1px solid var(--warn);color:var(--warn);border-radius:99px;font:600 10px var(--font-mono);text-transform:uppercase}.account-email{font-size:12px;color:var(--text-dim);max-width:200px;overflow:hidden;text-overflow:ellipsis}.logout-btn{border:0;background:transparent;color:var(--text);cursor:pointer;font-weight:600}.key-notice{display:none;margin-bottom:18px;padding:12px 14px;border:1px solid rgba(255,178,36,.35);background:rgba(255,178,36,.07);color:#d6d9df;font-size:13px;border-radius:var(--radius-sm)}.key-notice.show{display:block}@media(max-width:760px){.capabilities{grid-template-columns:1fr 1fr}.account-email{display:none}.topbar{align-items:center}.topbar h1{font-size:18px}}@media(max-width:430px){.capabilities{grid-template-columns:1fr}}
 </style>
 <style>
 :root{--void:#0b0c0f;--panel:#14161b;--panel-solid:#14161b;--border:#262a33;--border-bright:#3a3f4c;--violet:#ffb224;--violet-deep:#d98b00;--cyan:#ffb224;--cyan-soft:#ffb224;--text:#edeff3;--text-dim:#9ba3af;--text-mute:#6b7280;--accent:#ffb224;--success:#9fe870;--error:#ff4d3d;--warn:#ffb224;--radius:6px;--radius-sm:4px;--font-display:'Barlow Condensed',sans-serif}
@@ -192,9 +193,13 @@ html{color-scheme:dark}[hidden]{display:none!important}body{background:var(--voi
 </style>
 </head>
 <body>
+<div class="auth-screen auth-loading" id="authLoading"><div><div class="spinner" style="margin:auto"></div><p style="margin-top:14px">Memeriksa sesi aman…</p></div></div>
+<div class="auth-screen" id="publicScreen" hidden><header class="public-nav"><div class="public-brand">GEN CONSOLE</div><button class="btn" type="button" id="openLogin"><span>Masuk</span></button></header><main class="landing-main"><div class="landing-copy"><div class="landing-kicker">AI WORKSPACE / INDONESIA</div><h1>SATU RUANG.<br>SEMUA MODALITAS.</h1><p>Buat gambar, pahami visual, berdialog dengan AI, dan sintesis suara melalui satu console yang cepat dan terkelola.</p><div class="landing-actions"><button class="btn" type="button" id="heroLogin"><span>Masuk ke Console</span></button></div></div><section class="capabilities" aria-label="Kemampuan"><article class="capability"><strong>GENERATE</strong><span>Produksi visual dari prompt atau gambar referensi.</span></article><article class="capability"><strong>ANALYZE</strong><span>Pahami konten dan konteks gambar secara mendalam.</span></article><article class="capability"><strong>CONVERSE</strong><span>Chat teks untuk ide, pekerjaan, dan eksplorasi.</span></article><article class="capability"><strong>SYNTHESIZE</strong><span>Ubah teks menjadi audio dengan pilihan karakter suara.</span></article></section></main></div>
+<div class="auth-screen" id="loginScreen" hidden><div class="login-wrap"><section class="login-card"><div class="public-brand">GEN CONSOLE</div><h1>MASUK</h1><p>Gunakan akses yang diberikan administrator.</p><form class="login-form" id="dashboardLoginForm"><div class="field"><label for="loginEmail">Email</label><input class="input" id="loginEmail" type="email" autocomplete="username" required></div><div class="field"><label for="loginCredential">Passkey / API Key</label><input class="input" id="loginCredential" type="password" autocomplete="current-password" required></div><div class="login-error" id="loginError" role="alert"></div><button class="btn" id="loginSubmit" type="submit"><span>Masuk</span></button></form><button class="btn secondary login-back" id="loginBack" type="button"><span>Kembali</span></button></section></div></div>
 <!-- KONTRAK DESAIN: Gen Console memakai bahasa visual dashboard SBO: latar arang, panel instrumen berbingkai tipis, aksen amber, tipografi kondens untuk navigasi, dan monospace hanya untuk data teknis. Desktop memiliki sidebar 216px dan topbar sticky; mobile memakai navigasi bawah dengan tray Lainnya. Konten berbahasa Indonesia, ikon tombol berupa SVG authored, target sentuh minimal 44px, serta layout tanpa overflow. Semua ID, endpoint, autentikasi, admin MCP, API key, gambar, vision, chat, dan audio tetap menjadi kontrak perilaku yang tidak boleh diubah. -->
-<div class="app-shell"><aside class="side-nav"><div class="side-brand"><strong>GEN CONSOLE</strong><span>gen.azkazamdigital.com</span></div><nav class="nav-list" id="desktopNav" aria-label="Navigasi utama"></nav></aside><main class="main-shell"><header class="topbar"><h1 id="currentViewTitle">Ringkasan</h1><div class="header-status" role="status" aria-live="polite"><span id="topStatusDot" class="status-dot loading"></span><span id="topStatusText">Memeriksa layanan…</span></div></header>
+<div class="app-shell" id="dashboardApp" hidden><aside class="side-nav"><div class="side-brand"><strong>GEN CONSOLE</strong><span>gen.azkazamdigital.com</span></div><nav class="nav-list" id="desktopNav" aria-label="Navigasi utama"></nav></aside><main class="main-shell"><header class="topbar"><h1 id="currentViewTitle">Ringkasan</h1><div class="account-box"><span class="account-email" id="accountEmail"></span><span class="role-badge" id="accountRole"></span><button class="logout-btn" id="accountLogout" type="button">Keluar</button></div></header>
 <div class="wrap">
+<div class="key-notice" id="keyNotice">Sesi Anda tetap aktif. Demi keamanan, API key tidak dipulihkan setelah refresh. Masuk ulang saat ingin menjalankan operasi AI.</div>
 
 <!-- Header -->
 <header class="header">
@@ -425,7 +430,7 @@ html{color-scheme:dark}[hidden]{display:none!important}body{background:var(--voi
 <section class="mcp-panel" aria-labelledby="mcpTitle">
   <div class="mcp-head"><div><h2 id="mcpTitle">MCP CONNECTION</h2><p>Koneksi read-only untuk klien AI yang mendukung Model Context Protocol.</p></div><div class="mcp-status" role="status" aria-live="polite"><span id="mcpStatusDot" class="status-dot loading" aria-hidden="true"></span><span id="mcpStatusText">Memeriksa status…</span></div></div>
   <div class="mcp-layout">
-    <div class="mcp-block"><h3>Endpoint MCP</h3><div class="mcp-endpoint"><code id="mcpEndpoint">https://gen.azkazamdigital.com/mcp</code><button type="button" class="btn secondary" id="copyMcpEndpoint"><span>Salin endpoint</span></button></div><p class="mcp-note">MCP memakai key terpisah untuk setiap pengguna. Minta key pribadi kepada admin; tidak tersedia generator key publik. Panel ini tidak menampilkan secret maupun state layanan.</p><div class="mcp-actions"><button type="button" class="btn" id="copyMcpConfig"><span>Salin konfigurasi JSON</span></button><a class="btn secondary public-admin-link" href="#adminMcp"><span>Kelola pengguna</span></a></div></div>
+    <div class="mcp-block"><h3>Endpoint MCP</h3><div class="mcp-endpoint"><code id="mcpEndpoint">https://gen.azkazamdigital.com/mcp</code><button type="button" class="btn secondary" id="copyMcpEndpoint"><span>Salin endpoint</span></button></div><p class="mcp-note">MCP memakai key terpisah untuk setiap pengguna. Minta key pribadi kepada admin; tidak tersedia generator key publik. Panel ini tidak menampilkan secret maupun state layanan.</p><div class="mcp-actions"><button type="button" class="btn" id="copyMcpConfig"><span>Salin konfigurasi JSON</span></button><a class="btn secondary public-admin-link" id="manageUsersLink" href="#adminMcp" hidden><span>Kelola pengguna</span></a></div></div>
     <div class="mcp-block"><h3>8 Tool Tersedia</h3><ul class="mcp-tools"><li><strong>chat_text</strong>Chat dan respons teks</li><li><strong>analyze_image</strong>Analisis konten gambar</li><li><strong>generate_image</strong>Generasi gambar dari teks</li><li><strong>edit_image</strong>Edit gambar dengan instruksi</li><li><strong>generate_audio</strong>Sintesis audio dari teks</li><li><strong>list_voices</strong>Daftar suara tersedia</li><li><strong>get_pool_status</strong>Status pool layanan</li><li><strong>get_service_status</strong>Status kesehatan layanan</li></ul></div>
   </div>
   <div class="admin-shell" id="adminMcp">
@@ -558,8 +563,9 @@ const DASH_VIEWS = [
 const navIcon = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M8 9h8M8 13h8M8 17h5"/></svg>';
 function navigateView(id, updateHash = true) {
   if (!DASH_VIEWS.some(v => v[0] === id)) id = 'ringkasan';
+  if (id === 'pengguna' && authSession?.role !== 'admin') id = 'ringkasan';
   document.querySelectorAll('.card,.mcp-panel,.code-section').forEach(el => el.classList.remove('view-active'));
-  document.querySelector('.hero').hidden = id !== 'ringkasan'; document.querySelector('.pool-bar').hidden = id !== 'ringkasan'; document.querySelector('.creds').hidden = id !== 'ringkasan'; document.querySelector('.simple-key').hidden = id !== 'ringkasan';
+  document.querySelector('.hero').hidden = id !== 'ringkasan'; document.querySelector('.pool-bar').hidden = id !== 'ringkasan' || authSession?.role !== 'admin'; document.querySelector('.creds').hidden = id !== 'ringkasan'; document.querySelector('.simple-key').hidden = true;
   const targets = {gambar:'cardImage',analisis:'cardVision',chat:'cardChat',audio:'cardTTS',mcp:'mcpTitle',pengguna:'adminMcp',dokumentasi:'codeCurl'};
   const target = targets[id] && document.getElementById(targets[id]); if (target) (target.closest('.card,.mcp-panel,.code-section') || target).classList.add('view-active');
   document.querySelectorAll('[data-view]').forEach(b => { const active=b.dataset.view === id; b.classList.toggle('active', active); if(active) b.setAttribute('aria-current','page'); else b.removeAttribute('aria-current'); });
@@ -568,34 +574,47 @@ function navigateView(id, updateHash = true) {
   if (updateHash) history.replaceState(null, '', '#' + id);
 }
 function buildNavigation() {
+  document.getElementById('desktopNav').replaceChildren(); document.getElementById('mobileNav').replaceChildren(); document.getElementById('moreTray').replaceChildren();
   const make = ([id,label]) => { const b=document.createElement('button'); b.type='button'; b.className='nav-btn'; b.dataset.view=id; b.innerHTML=navIcon+'<span>'+label+'</span>'; b.onclick=()=>navigateView(id); return b; };
-  DASH_VIEWS.forEach(v=>document.getElementById('desktopNav').append(make(v)));
-  DASH_VIEWS.slice(0,4).forEach(v=>document.getElementById('mobileNav').append(make(v)));
+  const allowed=DASH_VIEWS.filter(v=>v[0]!=='pengguna'||authSession?.role==='admin');
+  allowed.forEach(v=>document.getElementById('desktopNav').append(make(v)));
+  allowed.slice(0,4).forEach(v=>document.getElementById('mobileNav').append(make(v)));
   const more=document.createElement('button'); more.type='button'; more.innerHTML=navIcon+'<span>Lainnya</span>'; more.onclick=()=>document.getElementById('moreTray').classList.toggle('open'); document.getElementById('mobileNav').append(more);
-  DASH_VIEWS.slice(4).forEach(v=>document.getElementById('moreTray').append(make(v)));
+  allowed.slice(4).forEach(v=>document.getElementById('moreTray').append(make(v)));
   const hash=location.hash.slice(1); navigateView(hash==='adminMcp'?'pengguna':hash,false);
 }
 window.addEventListener('hashchange',()=>navigateView(location.hash.slice(1)==='adminMcp'?'pengguna':location.hash.slice(1),false));
 const MCP_ENDPOINT = 'https://gen.azkazamdigital.com/mcp';
 const MCP_CONFIG = JSON.stringify({ mcpServers: { cosmicAI: { url: MCP_ENDPOINT, headers: { Authorization: 'Bearer YOUR_MCP_KEY' } } } }, null, 2);
-let activeCredential = localStorage.getItem('gen_api_key') || '';
-let requestHeaders = activeCredential ? { 'Authorization': `Bearer ${activeCredential}` } : {};
+let authSession = null;
 
-function setApiKey(key) {
-  activeCredential = key;
-  requestHeaders = key ? { 'Authorization': `Bearer ${key}` } : {};
-  if (key) localStorage.setItem('gen_api_key', key);
-  else localStorage.removeItem('gen_api_key');
-  document.getElementById('credKey').textContent = key || 'Belum dibuat';
+function setApiKey() { document.getElementById('credKey').textContent = 'Dikelola aman oleh sesi dashboard'; }
+
+function showAuthScreen(name) {
+  document.getElementById('authLoading').hidden=name!=='checking'; document.getElementById('publicScreen').hidden=name!=='public';
+  document.getElementById('loginScreen').hidden=name!=='login'; document.getElementById('dashboardApp').hidden=name!=='dashboard';
 }
+function showDashboard(session, credential='') {
+  authSession=session; setApiKey();
+  document.getElementById('accountEmail').textContent=session.user?.email||''; document.getElementById('accountRole').textContent=session.role;
+  document.getElementById('keyNotice').classList.remove('show'); document.getElementById('manageUsersLink').hidden=session.role!=='admin';
+  document.querySelector('.simple-key').hidden=true; document.getElementById('adminMcp').hidden=session.role!=='admin';
+  showAuthScreen('dashboard'); buildNavigation(); init(); if(session.role==='admin'){setAdminState(true); loadUsers().catch(e=>adminMessage(e.message));}
+}
+async function checkSession() { try { const r=await fetch(`${BASE}/auth/session`,{credentials:'include',headers:{Accept:'application/json'}}); const d=await r.json().catch(()=>null); if(r.ok&&d?.authenticated) return showDashboard(d); } catch {} showAuthScreen('public'); }
+function openLogin(){document.getElementById('loginError').textContent='';showAuthScreen('login');document.getElementById('loginEmail').focus()}
+document.getElementById('openLogin').onclick=openLogin; document.getElementById('heroLogin').onclick=openLogin; document.getElementById('loginBack').onclick=()=>showAuthScreen('public');
+document.getElementById('dashboardLoginForm').addEventListener('submit',async e=>{e.preventDefault();const btn=document.getElementById('loginSubmit'),credential=document.getElementById('loginCredential').value;setLoading(btn,true);document.getElementById('loginError').textContent='';try{const r=await fetch(`${BASE}/auth/login`,{method:'POST',credentials:'include',headers:{'Content-Type':'application/json','Accept':'application/json'},body:JSON.stringify({email:document.getElementById('loginEmail').value.trim(),credential})});const d=await r.json().catch(()=>null);if(!r.ok||!d?.authenticated)throw new Error('Email atau kredensial tidak valid.');document.getElementById('loginCredential').value='';showDashboard(d,d.role==='user'?credential:'');}catch(err){document.getElementById('loginCredential').value='';document.getElementById('loginError').textContent=err.message;}finally{setLoading(btn,false)}});
+document.getElementById('accountLogout').onclick=async()=>{try{await fetch(`${BASE}/auth/logout`,{method:'POST',credentials:'include'})}finally{authSession=null;setApiKey();history.replaceState(null,'',location.pathname);showAuthScreen('public')}};
 
 async function init() {
   document.getElementById('credUrl').textContent = BASE;
-  setApiKey(activeCredential);
+  setApiKey();
   await checkStatus();
-  await loadPoolInfo();
+  if (authSession?.role === 'admin') await loadPoolInfo();
   await checkMcpStatus();
 }
+function requireApiKey() { if (!authSession) { showAuthScreen('public'); return false; } return true; }
 
 async function checkMcpStatus() {
   const dot = document.getElementById('mcpStatusDot');
@@ -615,8 +634,6 @@ document.getElementById('copyMcpEndpoint').addEventListener('click', () => copyT
 document.getElementById('copyMcpConfig').addEventListener('click', () => copyText(MCP_CONFIG));
 
 // ─── MCP admin ───────────────────────────
-const ADMIN_TOKEN_KEY = 'cosmic_admin_token';
-let adminToken = sessionStorage.getItem(ADMIN_TOKEN_KEY) || '';
 let adminBusy = false;
 const adminArea = document.getElementById('adminArea');
 const adminLoginForm = document.getElementById('adminLoginForm');
@@ -638,8 +655,6 @@ function setAdminState(loggedIn) {
   if (!loggedIn) document.getElementById('adminUsers').replaceChildren();
 }
 function expireAdmin(message = 'Sesi admin berakhir. Silakan login kembali.') {
-  adminToken = '';
-  sessionStorage.removeItem(ADMIN_TOKEN_KEY);
   clearSecret();
   setAdminState(false);
   adminMessage(message);
@@ -652,14 +667,14 @@ function errorMessage(status, data) {
   return typeof data?.error === 'string' ? data.error : 'Permintaan gagal. Silakan coba lagi.';
 }
 async function adminFetch(path, options = {}) {
-  const headers = { Accept: 'application/json', ...(options.body ? { 'Content-Type': 'application/json' } : {}), ...(adminToken ? { Authorization: `Bearer ${adminToken}` } : {}) };
+  const headers = { Accept: 'application/json', ...(options.body ? { 'Content-Type': 'application/json' } : {}) };
   let response;
-  try { response = await fetch(`${BASE}${path}`, { ...options, headers }); }
+  try { response = await fetch(`${BASE}${path}`, { ...options, credentials: 'include', headers }); }
   catch { throw new Error('Tidak dapat terhubung ke layanan admin.'); }
   let data = null;
   if (response.status !== 204) { try { data = await response.json(); } catch {} }
   if (!response.ok) {
-    if (response.status === 401 && path !== '/admin/login') expireAdmin();
+    if (response.status === 401) expireAdmin();
     throw new Error(errorMessage(response.status, data));
   }
   return data;
@@ -714,15 +729,9 @@ async function loadUsers() {
 }
 document.getElementById('adminToggle').addEventListener('click', () => {
   const opening = adminArea.hidden; adminArea.hidden = !opening; document.getElementById('adminToggle').setAttribute('aria-expanded', String(opening)); clearSecret();
-  if (opening) { setAdminState(Boolean(adminToken)); if (adminToken) runAdminAction(async () => { await loadUsers(); adminMessage('Sesi admin aktif.', 'info'); }); else document.getElementById('adminEmail').focus(); }
+  if (opening && authSession?.role === 'admin') runAdminAction(async () => { setAdminState(true); await loadUsers(); adminMessage('Sesi admin aktif.', 'info'); });
 });
-adminLoginForm.addEventListener('submit', event => { event.preventDefault(); runAdminAction(async () => {
-  const email = document.getElementById('adminEmail').value.trim(); const passwordInput = document.getElementById('adminPassword'); const password = passwordInput.value;
-  if (!email || !password) throw new Error('Email dan password wajib diisi.');
-  passwordInput.value = '';
-  const data = await adminFetch('/admin/login', { method: 'POST', body: JSON.stringify({ email, password }) });
-  if (!data?.token) throw new Error('Respons login tidak valid.'); adminToken = data.token; sessionStorage.setItem(ADMIN_TOKEN_KEY, adminToken); setAdminState(true); await loadUsers(); adminMessage('Login berhasil.', 'info');
-}); });
+adminLoginForm.addEventListener('submit', event => { event.preventDefault(); openLogin(); });
 document.getElementById('userForm').addEventListener('submit', event => { event.preventDefault(); runAdminAction(async () => {
   const email = document.getElementById('userEmail').value.trim(); const maxSessions = Number(document.getElementById('userMaxSessions').value);
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new Error('Masukkan email pengguna yang valid.');
@@ -731,9 +740,9 @@ document.getElementById('userForm').addEventListener('submit', event => { event.
   const data = await adminFetch('/admin/users', { method: 'POST', body: JSON.stringify(payload) }); event.target.reset(); document.getElementById('userMaxSessions').value = '1'; document.getElementById('userActive').checked = true; adminMessage(data.key ? 'Pengguna dibuat. Simpan key sekarang.' : 'Data pengguna diperbarui.', 'info'); await loadUsers(); showSecret(data.key);
 }); });
 document.getElementById('copySecret').addEventListener('click', () => { const key = document.getElementById('secretKey').textContent; if (key) navigator.clipboard.writeText(key).then(() => showToast('Key MCP disalin')).catch(() => showToast('Gagal menyalin key')); });
-document.getElementById('adminLogout').addEventListener('click', () => runAdminAction(async () => { try { await adminFetch('/admin/logout', { method: 'POST' }); } finally { expireAdmin('Anda telah logout.'); document.getElementById('adminPassword').value = ''; } }));
+document.getElementById('adminLogout').addEventListener('click', () => document.getElementById('accountLogout').click());
 window.addEventListener('hashchange', clearSecret);
-setAdminState(Boolean(adminToken));
+setAdminState(false);
 
 async function generateSimpleKey() {
   const btn = document.getElementById('generateKeyBtn');
@@ -753,8 +762,7 @@ async function generateSimpleKey() {
 }
 
 function copyCurrentKey() {
-  if (!activeCredential) return showToast('Generate API key terlebih dahulu');
-  copyText(activeCredential);
+  showToast('API key dikelola oleh admin dan tidak ditampilkan kembali.');
 }
 
 async function checkStatus() {
@@ -874,6 +882,7 @@ function removeSourceImage() {
 }
 
 async function generateImage() {
+  if (!requireApiKey()) return;
   const prompt = document.getElementById('imgPrompt').value.trim();
   if (!prompt) return showToast('Prompt wajib diisi');
   if (imageMode === 'image' && !sourceImageData) return showToast('Upload source image terlebih dahulu');
@@ -883,14 +892,14 @@ async function generateImage() {
   setLoading(btn, true);
 
   try {
-    const endpoint = count > 1 ? '/v1/images/variations' : '/v1/images/generations';
+    const endpoint = count > 1 ? '/dashboard/v1/images/variations' : '/dashboard/v1/images/generations';
     const body = { prompt, ratio };
     if (imageMode === 'image') body.image = sourceImageData;
     if (count > 1) body.count = count;
 
     const r = await fetch(`${BASE}${endpoint}`, {
       method: 'POST',
-      headers: { ...requestHeaders, 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     });
     const data = await r.json();
@@ -944,15 +953,16 @@ function handleFile(type) {
 }
 
 async function analyzeImage() {
+  if (!requireApiKey()) return;
   const prompt = document.getElementById('visionPrompt').value.trim() || 'Deskripsikan gambar ini';
   if (!visionImageData) return showToast('Upload gambar dulu');
   const btn = document.getElementById('btnVision');
   setLoading(btn, true);
 
   try {
-    const r = await fetch(`${BASE}/v1/chat/completions`, {
+    const r = await fetch(`${BASE}/dashboard/v1/chat/completions`, {
       method: 'POST',
-      headers: { ...requestHeaders, 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ prompt, referenceImage: visionImageData }),
     });
     const data = await r.json();
@@ -970,15 +980,16 @@ async function analyzeImage() {
 
 // ─── Chat ────────────────────────────────
 async function chatText() {
+  if (!requireApiKey()) return;
   const prompt = document.getElementById('chatPrompt').value.trim();
   if (!prompt) return showToast('Message wajib diisi');
   const btn = document.getElementById('btnChat');
   setLoading(btn, true);
 
   try {
-    const r = await fetch(`${BASE}/v1/chat/completions`, {
+    const r = await fetch(`${BASE}/dashboard/v1/chat/completions`, {
       method: 'POST',
-      headers: { ...requestHeaders, 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ prompt }),
     });
     const data = await r.json();
@@ -996,6 +1007,7 @@ async function chatText() {
 
 // ─── TTS ─────────────────────────────────
 async function generateTTS() {
+  if (!requireApiKey()) return;
   const text = document.getElementById('ttsText').value.trim();
   if (!text) return showToast('Text wajib diisi');
   const voice = document.getElementById('ttsVoice').value;
@@ -1003,9 +1015,9 @@ async function generateTTS() {
   setLoading(btn, true);
 
   try {
-    const r = await fetch(`${BASE}/v1/audio/speech`, {
+    const r = await fetch(`${BASE}/dashboard/v1/audio/speech`, {
       method: 'POST',
-      headers: { ...requestHeaders, 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ input: text, voice }),
     });
     const data = await r.json();
@@ -1030,8 +1042,7 @@ function showCode(lang, btn) {
 }
 
 // ─── Start ───────────────────────────────
-buildNavigation();
-init();
+checkSession();
 </script>
 </body>
 </html>

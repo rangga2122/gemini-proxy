@@ -39,6 +39,14 @@ export class AdminAuth{
   async validate(token){if(typeof token!=='string')return false;await this.prune();const h=createHash('sha256').update(token).digest();return this.sessions.some(s=>{const x=Buffer.from(s.hash,'hex');return x.length===h.length&&timingSafeEqual(x,h)})}
   async logout(token){const h=createHash('sha256').update(String(token)).digest('hex');this.sessions=this.sessions.filter(s=>s.hash!==h);await atomic(this.file,this.sessions)}
 }
+export class DashboardAuth{
+  constructor(file,{users,keys,ttlMs=8*60*60*1000,now=Date.now}={}){this.file=file;this.users=users;this.keys=keys;this.ttlMs=ttlMs;this.now=now;this.sessions=[]}
+  async load(){this.sessions=await load(this.file);await this.prune()}
+  async prune(){const before=this.sessions.length;this.sessions=this.sessions.filter(s=>s.expiresAt>this.now());if(before!==this.sessions.length)await atomic(this.file,this.sessions)}
+  async create(identity){await this.prune();if(identity.role==='user'){const user=this.users.get(identity.userId),limit=user?.maxSessions;if(!Number.isInteger(limit)||limit<1)return null;const active=this.sessions.filter(s=>s.role==='user'&&s.userId===identity.userId&&s.keyId===identity.keyId&&s.expiresAt>this.now()).length;if(active>=limit)return null}const token=randomBytes(32).toString('base64url');this.sessions.push({id:randomUUID(),hash:createHash('sha256').update(token).digest('hex'),role:identity.role,userId:identity.userId??null,keyId:identity.keyId??null,user:identity.user??null,expiresAt:this.now()+this.ttlMs});await atomic(this.file,this.sessions);return token}
+  async validate(token){if(typeof token!=='string')return null;await this.prune();const h=createHash('sha256').update(token).digest();const s=this.sessions.find(v=>{const x=Buffer.from(v.hash,'hex');return x.length===h.length&&timingSafeEqual(x,h)});if(!s)return null;if(s.role==='admin')return {role:'admin',user:s.user};if(s.role!=='user')return null;await this.keys.reloadIfChanged?.();const u=this.users.get(s.userId),k=this.keys.records.find(v=>v.id===s.keyId);if(!u||!u.active||(u.expiresAt!==null&&Date.parse(u.expiresAt)<=this.now())||u.keyId!==s.keyId||!k||!k.active||k.userId!==u.id)return null;return {role:'user',user:publicUser(u)}}
+  async logout(token){const hash=createHash('sha256').update(String(token)).digest('hex');this.sessions=this.sessions.filter(s=>s.hash!==hash);await atomic(this.file,this.sessions)}
+}
 function validHex(v){return typeof v==='string'&&v.length>=64&&v.length%2===0&&/^[a-f0-9]+$/i.test(v)}
 export function validUserInput(v,{partial=false}={}){
   if(!v||typeof v!=='object'||Array.isArray(v))return false;const allowed=partial?['label','active','expiresAt','maxSessions']:['email','label','active','expiresAt','maxSessions'];if(Object.keys(v).some(k=>!allowed.includes(k)))return false;
