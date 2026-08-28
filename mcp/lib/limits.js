@@ -4,7 +4,7 @@ export class FixedWindow{
   prune(start){for(const [k,v] of this.map){if(v.start<start)this.map.delete(k)}while(this.map.size>this.maxKeys)this.map.delete(this.map.keys().next().value)}
 }
 export class SingleFlight{
-  constructor(){this.active=new Set}
-  acquire(key){if(this.active.has(key))return null;this.active.add(key);let released=false;return()=>{if(released)return;released=true;this.active.delete(key)}}
+  constructor(max=1){if(!Number.isInteger(max)||max<1)throw new TypeError('invalid per-key concurrency');this.max=max;this.active=new Map}
+  acquire(key){const count=this.active.get(key)||0;if(count>=this.max)return null;this.active.set(key,count+1);let released=false;return()=>{if(released)return;released=true;const current=this.active.get(key)||0;if(current<=1)this.active.delete(key);else this.active.set(key,current-1)}}
 }
 export class Semaphore{constructor(max,queueMax=30){if(!Number.isInteger(max)||max<1||!Number.isInteger(queueMax)||queueMax<0)throw new TypeError('invalid semaphore limits');this.max=max;this.queueMax=queueMax;this.active=0;this.queue=[]}acquire(){if(this.active<this.max){this.active++;return Promise.resolve(this.releaseFn())}if(this.queue.length>=this.queueMax){const e=new Error('backend busy: overloaded');e.code=-32002;return Promise.reject(e)}return new Promise((resolve,reject)=>this.queue.push({resolve,reject}))}releaseFn(){let done=false;return()=>{if(done)return;done=true;const n=this.queue.shift();if(n)n.resolve(this.releaseFn());else this.active--}}async run(fn){const release=await this.acquire();try{return await fn()}finally{release()}}close(){for(const x of this.queue){const e=new Error('shutting down');e.code=-32002;x.reject(e)}this.queue=[]}}

@@ -5,7 +5,7 @@ import {mkdir,readFile,rename,unlink,writeFile} from 'node:fs/promises';
 import {randomUUID} from 'node:crypto';
 import {fileURLToPath} from 'node:url';
 import {KeyStore} from './lib/auth.js';
-import {AdminAuth,DashboardAuth,UserStore,normalizeEmail,publicUser,validUserInput,passwordVerifier,userEntitlement,DEFAULT_RPM} from './lib/admin.js';
+import {AdminAuth,DashboardAuth,UserStore,normalizeEmail,publicUser,validUserInput,passwordVerifier,userEntitlement,DEFAULT_RPM,DEFAULT_WORKERS} from './lib/admin.js';
 import {TrialStore} from './lib/trial.js';
 import {createMailer} from './lib/mailer.js';
 import {BillingService,PakasirClient} from './lib/billing.js';
@@ -38,7 +38,7 @@ export async function createApp(o={}){
   let billingCheckRunning=null;const billingCheck=()=>!billingCheckRunning?(billingCheckRunning=billing.checkPending().catch(()=>{}).finally(()=>billingCheckRunning=null)):billingCheckRunning;const billingCheckTimer=setInterval(billingCheck,positive(o.billingCheckIntervalMs??process.env.BILLING_CHECK_INTERVAL_MS,60000));billingCheckTimer.unref();
   const gen=new GenClient({baseUrl:o.genUrl||process.env.GEN_URL,apiKey:o.genKey||process.env.GEN_API_KEY});
   const tools=createTools(gen,artifacts,{publicBaseUrl:o.publicBaseUrl||process.env.PUBLIC_BASE_URL||'',limits:o.limits});
-  const rate=new FixedWindow(now,{maxKeys:o.rateLimitMaxKeys||10000}),singleFlight=new SingleFlight(),adminRate=new FixedWindow(now,{maxKeys:10000}),trialAttemptRate=new FixedWindow(now,{maxKeys:positive(o.trialAttemptRateMaxKeys??process.env.TRIAL_ATTEMPT_RATE_MAX_KEYS,10000)}),bodyTimeoutMs=positive(o.bodyTimeoutMs??process.env.BODY_TIMEOUT_MS,10000);let closing=false;
+  const rate=new FixedWindow(now,{maxKeys:o.rateLimitMaxKeys||10000}),singleFlight=new SingleFlight(DEFAULT_WORKERS),adminRate=new FixedWindow(now,{maxKeys:10000}),trialAttemptRate=new FixedWindow(now,{maxKeys:positive(o.trialAttemptRateMaxKeys??process.env.TRIAL_ATTEMPT_RATE_MAX_KEYS,10000)}),bodyTimeoutMs=positive(o.bodyTimeoutMs??process.env.BODY_TIMEOUT_MS,10000);let closing=false;
   let mutationTail=Promise.resolve();const mutate=fn=>{const run=mutationTail.then(fn,fn);mutationTail=run.catch(()=>{});return run};
   const server=http.createServer(async(req,res)=>{security(res);try{
     req.clientIp=clientIp(req,trustProxy);
@@ -60,7 +60,7 @@ export async function createApp(o={}){
     let user=null;if(record.userId){user=users.get(record.userId);if(!user||!user.active||(user.expiresAt!==null&&Date.parse(user.expiresAt)<=now())||user.keyId!==record.id)return unauthorized(res)}
     const actor=record.userId?`user:${record.userId}`:`key:${record.id}`,rpm=user?(user.rpmLimit??DEFAULT_RPM):(record.limit??o.rateLimit??30);
     const rl=rate.take(actor,rpm);res.setHeader('x-ratelimit-limit',String(rpm));res.setHeader('x-ratelimit-remaining',String(Math.max(0,rl.remaining??0)));if(!rl.ok){res.setHeader('retry-after',String(Math.ceil(rl.retryAfterMs/1000)));return json(res,429,{error:'rate limit',rpmLimit:rpm})}
-    const release=singleFlight.acquire(actor);if(!release){res.setHeader('retry-after','1');return json(res,429,{error:'Only one active API request is allowed per account'})}
+    const release=singleFlight.acquire(actor);if(!release){res.setHeader('retry-after','1');return json(res,429,{error:`Maximum ${DEFAULT_WORKERS} active API requests are allowed per account`,workerLimit:DEFAULT_WORKERS})}
     try{let query;try{query=JSON.parse(await body(req,MAX))}catch{return json(res,400,{jsonrpc:'2.0',id:null,error:{code:-32700,message:'Parse error'}})}
       const answer=await dispatch(query,tools),feature=mcpFeature(query);if(feature&&answer&&!answer.result?.isError)await usage.record(actor,feature).catch(()=>{});if(answer===null){res.writeHead(202);return res.end()}return json(res,200,answer)
     }finally{release()}
@@ -82,7 +82,7 @@ async function handleDashboard(req,res,url,{dashboard,users,gen,usage,rate,singl
   const session=await dashboard.validate(sessionCookie(req));if(!session)return unauthorized(res);
   if(session.entitlement==='profile-only')return json(res,403,{error:'Forbidden'});
   const actor=session.role==='user'?`user:${session.user.id}`:'admin',rpm=session.role==='user'?(users.get(session.user.id)?.rpmLimit??DEFAULT_RPM):null;
-  let release=null;if(req.method==='POST'&&session.role==='user'){const rl=rate.take(actor,rpm);res.setHeader('x-ratelimit-limit',String(rpm));res.setHeader('x-ratelimit-remaining',String(Math.max(0,rl.remaining??0)));if(!rl.ok){res.setHeader('retry-after',String(Math.ceil(rl.retryAfterMs/1000)));return json(res,429,{error:'rate limit',rpmLimit:rpm})}release=singleFlight.acquire(actor);if(!release){res.setHeader('retry-after','1');return json(res,429,{error:'Only one active API request is allowed per account'})}}
+  let release=null;if(req.method==='POST'&&session.role==='user'){const rl=rate.take(actor,rpm);res.setHeader('x-ratelimit-limit',String(rpm));res.setHeader('x-ratelimit-remaining',String(Math.max(0,rl.remaining??0)));if(!rl.ok){res.setHeader('retry-after',String(Math.ceil(rl.retryAfterMs/1000)));return json(res,429,{error:'rate limit',rpmLimit:rpm})}release=singleFlight.acquire(actor);if(!release){res.setHeader('retry-after','1');return json(res,429,{error:`Maximum ${DEFAULT_WORKERS} active API requests are allowed per account`,workerLimit:DEFAULT_WORKERS})}}
   let value; if(req.method==='POST'){try{value=JSON.parse(await body(req,MAX))}catch{release?.();return json(res,400,{error:'Invalid request'})}}
   try{const result=await gen.request(path,{method:req.method,body:value}),feature=dashboardFeature(path,value);if(feature)await usage.record(actor,feature,featureCount(feature,result.json)).catch(()=>{});if(result.json!==undefined)return json(res,200,result.json);res.writeHead(200,{'content-type':result.mime});return res.end(result.data)}catch{return json(res,502,{error:'Backend unavailable'})}finally{release?.()}
 }
@@ -133,7 +133,7 @@ function normalizeTrialEmail(v){if(typeof v!=='string')throw new Error();const e
 
 async function handleProfile(req,res,url,c){
   const oldToken=sessionCookie(req),session=await c.dashboard.validate(oldToken);if(!session)return unauthorized(res);
-  if(req.method==='GET'&&url.pathname==='/profile'){if(session.role==='admin')return json(res,200,{role:'admin',user:session.user,remainingMs:null});const u=c.users.get(session.user.id),key=u.keyId&&c.keys.records.find(k=>k.id===u.keyId&&k.active),remainingMs=u.expiresAt===null?null:Math.max(0,Math.floor(Date.parse(u.expiresAt)-c.now()));return json(res,200,{role:'user',entitlement:session.entitlement,user:publicUser(u),remainingMs,rpmLimit:u.rpmLimit??DEFAULT_RPM,hasApiKey:Boolean(key),...(key?{keyId:key.id,keyCreatedAt:key.createdAt}:{})})}
+  if(req.method==='GET'&&url.pathname==='/profile'){if(session.role==='admin')return json(res,200,{role:'admin',user:session.user,remainingMs:null});const u=c.users.get(session.user.id),key=u.keyId&&c.keys.records.find(k=>k.id===u.keyId&&k.active),remainingMs=u.expiresAt===null?null:Math.max(0,Math.floor(Date.parse(u.expiresAt)-c.now()));return json(res,200,{role:'user',entitlement:session.entitlement,user:publicUser(u),remainingMs,rpmLimit:u.rpmLimit??DEFAULT_RPM,workerLimit:DEFAULT_WORKERS,hasApiKey:Boolean(key),...(key?{keyId:key.id,keyCreatedAt:key.createdAt}:{})})}
   if(session.role!=='user')return json(res,403,{error:'Forbidden'});const u=c.users.get(session.user.id);
   const rl=c.adminRate.take(`profile:${u.id}:${req.clientIp}`,Number(c.o.profileRateLimit??30));if(!rl.ok)return json(res,429,{error:'Too many requests'});
   if(req.method==='POST'&&url.pathname==='/profile/password'){const v=req.parsedBody,allowed=['currentPassword','newPassword','confirmPassword'];if(!v||Object.keys(v).length!==3||Object.keys(v).some(k=>!allowed.includes(k))||typeof v.currentPassword!=='string'||typeof v.newPassword!=='string'||typeof v.confirmPassword!=='string'||v.newPassword!==v.confirmPassword||v.newPassword.length<10||v.newPassword.length>1024)return json(res,400,{error:'Invalid request'});if(!c.users.verifyPassword(u,v.currentPassword))return json(res,401,{error:'Invalid credentials'});await c.users.setPassword(u.id,v.newPassword);await c.dashboard.revokeUser(u.id);const token=await c.dashboard.create({role:'user',userId:u.id});res.setHeader('set-cookie',sessionCookieHeader(token));return json(res,200,{changed:true})}

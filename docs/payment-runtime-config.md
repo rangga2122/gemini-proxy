@@ -15,6 +15,8 @@ Gen Console sells one calendar month of access for Rp35,000 through Pakasir QRIS
 
 Store production values only in the root-readable `.env.mcp` file used by the systemd service. When either Pakasir credential is missing, `/billing/plan` reports `configured: false`, order creation returns HTTP 503, and the rest of Gen Console remains available.
 
+The standard account capacity is 60 requests per minute with two simultaneous active requests. The two-worker limit is shared by the same account across MCP API-key traffic and Console dashboard traffic; a third request received while both slots are occupied returns HTTP 429 with `workerLimit: 2`.
+
 The server validates project, order ID, and amount on both transaction creation and status lookup. It generates the displayed QR from Pakasir's `payment_number`; no API key or provider response is exposed to the browser. Pending orders are also verified in the background, so package activation does not depend on the profile page remaining open.
 
 ## Public landing-page checkout

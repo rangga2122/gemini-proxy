@@ -6,6 +6,7 @@ async function atomic(file,value){await mkdir(dirname(file),{recursive:true,mode
 async function load(file){try{const value=JSON.parse(await readFile(file,'utf8'));return Array.isArray(value)?value:[]}catch(e){if(e.code==='ENOENT')return [];throw e}}
 export const normalizeEmail=value=>typeof value==='string'?value.trim().toLowerCase():'';
 export const DEFAULT_RPM=60;
+export const DEFAULT_WORKERS=2;
 const publicUser=u=>({id:u.id,email:u.email,phone:u.phone??null,label:u.label,active:u.active,expiresAt:u.expiresAt,maxSessions:u.maxSessions,rpmLimit:normalizeRpm(u.rpmLimit),keyId:u.keyId??null,accountType:u.accountType??'managed',trialStartedAt:u.trialStartedAt??null,trialEndsAt:u.trialEndsAt??null,createdAt:u.createdAt,updatedAt:u.updatedAt});
 const password=()=>randomBytes(24).toString('base64url');
 export function passwordVerifier(value){if(typeof value!=='string')throw new TypeError('password required');const salt=randomBytes(16).toString('hex');return {passwordSalt:salt,passwordHash:scryptSync(value,salt,32).toString('hex')}}

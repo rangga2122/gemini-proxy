@@ -2,7 +2,7 @@ import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypt
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import QRCode from 'qrcode';
-import { DEFAULT_RPM } from './admin.js';
+import { DEFAULT_RPM, DEFAULT_WORKERS } from './admin.js';
 
 export const PLAN_PRICE_IDR = 35_000;
 export const PLAN_MONTHS = 1;
@@ -54,7 +54,7 @@ export class BillingService {
     this.file=file;this.users=users;this.client=client;this.now=now;this.price=price;this.orderTtlMs=orderTtlMs;this.persistImpl=persist;this.data={version:1,orders:[]};this.tail=Promise.resolve();this.checking=new Map();this.creating=new Map();this.lastChecks=new Map();
   }
   get configured(){return this.client.configured}
-  plan(){return {provider:'pakasir',configured:this.configured,priceIdr:this.price,durationMonths:PLAN_MONTHS,rpmLimit:DEFAULT_RPM}}
+  plan(){return {provider:'pakasir',configured:this.configured,priceIdr:this.price,durationMonths:PLAN_MONTHS,rpmLimit:DEFAULT_RPM,workerLimit:DEFAULT_WORKERS}}
   async load(){try{const value=JSON.parse(await readFile(this.file,'utf8'));this.data={version:1,orders:Array.isArray(value?.orders)?value.orders:[]}}catch(error){if(error.code!=='ENOENT')throw error}await this.recoverApplying()}
   enqueue(op){const run=this.tail.then(op);this.tail=run.catch(()=>{});return run}
   async persist(){if(this.persistImpl)return this.persistImpl(this.file,this.data);await mkdir(dirname(this.file),{recursive:true,mode:0o700});const temporary=`${this.file}.${process.pid}.${randomUUID()}.tmp`;await writeFile(temporary,JSON.stringify(this.data),{mode:0o600});await rename(temporary,this.file)}
