@@ -5,7 +5,7 @@ import {mkdir,readFile,rename,unlink,writeFile} from 'node:fs/promises';
 import {randomUUID} from 'node:crypto';
 import {fileURLToPath} from 'node:url';
 import {KeyStore} from './lib/auth.js';
-import {AdminAuth,DashboardAuth,UserStore,normalizeEmail,publicUser,validUserInput,passwordVerifier,userEntitlement,DEFAULT_RPM,DEFAULT_WORKERS} from './lib/admin.js';
+import {AdminAuth,DashboardAuth,UserStore,normalizeEmail,publicUser,validUserInput,passwordVerifier,userEntitlement,DEFAULT_RPM,DEFAULT_WORKERS,normalizeWorkerLimit} from './lib/admin.js';
 import {TrialStore} from './lib/trial.js';
 import {createMailer} from './lib/mailer.js';
 import {BillingService,PakasirClient} from './lib/billing.js';
@@ -58,9 +58,9 @@ export async function createApp(o={}){
     if(req.method!=='POST'||url.pathname!=='/mcp'){res.writeHead(404);return res.end()}if(closing){res.writeHead(503);return res.end()}
     const token=bearer(req),record=token&&await keys.authenticate(token);if(!record)return unauthorized(res);
     let user=null;if(record.userId){user=users.get(record.userId);if(!user||!user.active||(user.expiresAt!==null&&Date.parse(user.expiresAt)<=now())||user.keyId!==record.id)return unauthorized(res)}
-    const actor=record.userId?`user:${record.userId}`:`key:${record.id}`,rpm=user?(user.rpmLimit??DEFAULT_RPM):(record.limit??o.rateLimit??30);
+    const actor=record.userId?`user:${record.userId}`:`key:${record.id}`,rpm=user?(user.rpmLimit??DEFAULT_RPM):(record.limit??o.rateLimit??30),workers=normalizeWorkerLimit(user?.workerLimit);
     const rl=rate.take(actor,rpm);res.setHeader('x-ratelimit-limit',String(rpm));res.setHeader('x-ratelimit-remaining',String(Math.max(0,rl.remaining??0)));if(!rl.ok){res.setHeader('retry-after',String(Math.ceil(rl.retryAfterMs/1000)));return json(res,429,{error:'rate limit',rpmLimit:rpm})}
-    const release=singleFlight.acquire(actor);if(!release){res.setHeader('retry-after','1');return json(res,429,{error:`Maximum ${DEFAULT_WORKERS} active API requests are allowed per account`,workerLimit:DEFAULT_WORKERS})}
+    const release=singleFlight.acquire(actor,workers);if(!release){res.setHeader('retry-after','1');return json(res,429,{error:`Maximum ${workers} active API requests are allowed per account`,workerLimit:workers})}
     try{let query;try{query=JSON.parse(await body(req,MAX))}catch{return json(res,400,{jsonrpc:'2.0',id:null,error:{code:-32700,message:'Parse error'}})}
       const answer=await dispatch(query,tools),feature=mcpFeature(query);if(feature&&answer&&!answer.result?.isError)await usage.record(actor,feature).catch(()=>{});if(answer===null){res.writeHead(202);return res.end()}return json(res,200,answer)
     }finally{release()}
@@ -81,8 +81,8 @@ async function handleDashboard(req,res,url,{dashboard,users,gen,usage,rate,singl
   const path=DASHBOARD_ROUTES.get(`${req.method} ${url.pathname}`);if(!path)return notFound(res);
   const session=await dashboard.validate(sessionCookie(req));if(!session)return unauthorized(res);
   if(session.entitlement==='profile-only')return json(res,403,{error:'Forbidden'});
-  const actor=session.role==='user'?`user:${session.user.id}`:'admin',rpm=session.role==='user'?(users.get(session.user.id)?.rpmLimit??DEFAULT_RPM):null;
-  let release=null;if(req.method==='POST'&&session.role==='user'){const rl=rate.take(actor,rpm);res.setHeader('x-ratelimit-limit',String(rpm));res.setHeader('x-ratelimit-remaining',String(Math.max(0,rl.remaining??0)));if(!rl.ok){res.setHeader('retry-after',String(Math.ceil(rl.retryAfterMs/1000)));return json(res,429,{error:'rate limit',rpmLimit:rpm})}release=singleFlight.acquire(actor);if(!release){res.setHeader('retry-after','1');return json(res,429,{error:`Maximum ${DEFAULT_WORKERS} active API requests are allowed per account`,workerLimit:DEFAULT_WORKERS})}}
+  const actor=session.role==='user'?`user:${session.user.id}`:'admin',user=session.role==='user'?users.get(session.user.id):null,rpm=user?(user.rpmLimit??DEFAULT_RPM):null,workers=normalizeWorkerLimit(user?.workerLimit);
+  let release=null;if(req.method==='POST'&&session.role==='user'){const rl=rate.take(actor,rpm);res.setHeader('x-ratelimit-limit',String(rpm));res.setHeader('x-ratelimit-remaining',String(Math.max(0,rl.remaining??0)));if(!rl.ok){res.setHeader('retry-after',String(Math.ceil(rl.retryAfterMs/1000)));return json(res,429,{error:'rate limit',rpmLimit:rpm})}release=singleFlight.acquire(actor,workers);if(!release){res.setHeader('retry-after','1');return json(res,429,{error:`Maximum ${workers} active API requests are allowed per account`,workerLimit:workers})}}
   let value; if(req.method==='POST'){try{value=JSON.parse(await body(req,MAX))}catch{release?.();return json(res,400,{error:'Invalid request'})}}
   try{const result=await gen.request(path,{method:req.method,body:value}),feature=dashboardFeature(path,value);if(feature)await usage.record(actor,feature,featureCount(feature,result.json)).catch(()=>{});if(result.json!==undefined)return json(res,200,result.json);res.writeHead(200,{'content-type':result.mime});return res.end(result.data)}catch{return json(res,502,{error:'Backend unavailable'})}finally{release?.()}
 }
@@ -133,11 +133,11 @@ function normalizeTrialEmail(v){if(typeof v!=='string')throw new Error();const e
 
 async function handleProfile(req,res,url,c){
   const oldToken=sessionCookie(req),session=await c.dashboard.validate(oldToken);if(!session)return unauthorized(res);
-  if(req.method==='GET'&&url.pathname==='/profile'){if(session.role==='admin')return json(res,200,{role:'admin',user:session.user,remainingMs:null});const u=c.users.get(session.user.id),key=u.keyId&&c.keys.records.find(k=>k.id===u.keyId&&k.active),remainingMs=u.expiresAt===null?null:Math.max(0,Math.floor(Date.parse(u.expiresAt)-c.now()));return json(res,200,{role:'user',entitlement:session.entitlement,user:publicUser(u),remainingMs,rpmLimit:u.rpmLimit??DEFAULT_RPM,workerLimit:DEFAULT_WORKERS,hasApiKey:Boolean(key),...(key?{keyId:key.id,keyCreatedAt:key.createdAt}:{})})}
+  if(req.method==='GET'&&url.pathname==='/profile'){if(session.role==='admin')return json(res,200,{role:'admin',user:session.user,remainingMs:null});const u=c.users.get(session.user.id),key=u.keyId&&c.keys.records.find(k=>k.id===u.keyId&&k.active),remainingMs=u.expiresAt===null?null:Math.max(0,Math.floor(Date.parse(u.expiresAt)-c.now()));return json(res,200,{role:'user',entitlement:session.entitlement,user:publicUser(u),remainingMs,rpmLimit:u.rpmLimit??DEFAULT_RPM,workerLimit:normalizeWorkerLimit(u.workerLimit),hasApiKey:Boolean(key),...(key?{keyId:key.id,keyCreatedAt:key.createdAt}:{})})}
   if(session.role!=='user')return json(res,403,{error:'Forbidden'});const u=c.users.get(session.user.id);
   const rl=c.adminRate.take(`profile:${u.id}:${req.clientIp}`,Number(c.o.profileRateLimit??30));if(!rl.ok)return json(res,429,{error:'Too many requests'});
   if(req.method==='POST'&&url.pathname==='/profile/password'){const v=req.parsedBody,allowed=['currentPassword','newPassword','confirmPassword'];if(!v||Object.keys(v).length!==3||Object.keys(v).some(k=>!allowed.includes(k))||typeof v.currentPassword!=='string'||typeof v.newPassword!=='string'||typeof v.confirmPassword!=='string'||v.newPassword!==v.confirmPassword||v.newPassword.length<10||v.newPassword.length>1024)return json(res,400,{error:'Invalid request'});if(!c.users.verifyPassword(u,v.currentPassword))return json(res,401,{error:'Invalid credentials'});await c.users.setPassword(u.id,v.newPassword);await c.dashboard.revokeUser(u.id);const token=await c.dashboard.create({role:'user',userId:u.id});res.setHeader('set-cookie',sessionCookieHeader(token));return json(res,200,{changed:true})}
-  if(req.method==='POST'&&url.pathname==='/profile/api-key'){if(session.entitlement==='profile-only')return json(res,403,{error:'Forbidden'});const made=await c.keys.replaceForUser(u.keyId,u.label||u.email,{userId:u.id,email:u.email,limit:u.rpmLimit??DEFAULT_RPM},{commit:id=>c.users.commitKey(u.id,id),rollback:id=>c.users.restoreKey(u.id,id)});return json(res,201,{key:made.key,keyId:made.id,createdAt:c.keys.records.find(k=>k.id===made.id).createdAt,rpmLimit:u.rpmLimit??DEFAULT_RPM})}
+  if(req.method==='POST'&&url.pathname==='/profile/api-key'){if(session.entitlement==='profile-only')return json(res,403,{error:'Forbidden'});const made=await c.keys.replaceForUser(u.keyId,u.label||u.email,{userId:u.id,email:u.email,limit:u.rpmLimit??DEFAULT_RPM},{commit:id=>c.users.commitKey(u.id,id),rollback:id=>c.users.restoreKey(u.id,id)});return json(res,201,{key:made.key,keyId:made.id,createdAt:c.keys.records.find(k=>k.id===made.id).createdAt,rpmLimit:u.rpmLimit??DEFAULT_RPM,workerLimit:normalizeWorkerLimit(u.workerLimit)})}
   if(req.method==='DELETE'&&url.pathname==='/profile/api-key'){await deleteKey(c,u);res.writeHead(204);return res.end()}
   return notFound(res);
 }
@@ -160,7 +160,7 @@ async function handleAdmin(req,res,url,c){
   }
   const match=url.pathname.match(/^\/admin\/users\/([0-9a-f-]+)(\/(?:reset-password|api-key|rotate))?$/i);if(!match)return notFound(res);const user=c.users.get(match[1]);if(!user)return notFound(res);
   if(req.method==='POST'&&match[2]==='/reset-password'){const result=await c.users.resetPassword(user.id);await c.dashboard.revokeUser(user.id);return json(res,200,{user:publicUser(user),password:result.password})}
-  if(req.method==='POST'&&match[2]==='/rotate'){const made=await c.keys.replaceForUser(user.keyId,user.label||user.email,{userId:user.id,email:user.email,limit:user.rpmLimit??DEFAULT_RPM},{commit:id=>c.users.commitKey(user.id,id),rollback:id=>c.users.restoreKey(user.id,id)});return json(res,201,{key:made.key,keyId:made.id,createdAt:c.keys.records.find(k=>k.id===made.id).createdAt,rpmLimit:user.rpmLimit??DEFAULT_RPM})}
+  if(req.method==='POST'&&match[2]==='/rotate'){const made=await c.keys.replaceForUser(user.keyId,user.label||user.email,{userId:user.id,email:user.email,limit:user.rpmLimit??DEFAULT_RPM},{commit:id=>c.users.commitKey(user.id,id),rollback:id=>c.users.restoreKey(user.id,id)});return json(res,201,{key:made.key,keyId:made.id,createdAt:c.keys.records.find(k=>k.id===made.id).createdAt,rpmLimit:user.rpmLimit??DEFAULT_RPM,workerLimit:normalizeWorkerLimit(user.workerLimit)})}
   if(req.method==='DELETE'&&match[2]==='/api-key'){await deleteKey(c,user);res.writeHead(204);return res.end()}
   if(req.method==='PATCH'&&!match[2]){const value=req.parsedBody;if(!validUserInput(value,{partial:true}))return json(res,400,{error:'Invalid request'});await c.users.update(user.id,value);return json(res,200,{user:publicUser(user)})}
   if(req.method==='DELETE'&&!match[2]){await hardDelete(c,user.id);res.writeHead(204);return res.end()}
