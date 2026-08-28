@@ -1,8 +1,13 @@
 import http from 'node:http';
-import {join} from 'node:path';
+import net from 'node:net';
+import {dirname,join} from 'node:path';
+import {mkdir,readFile,rename,unlink,writeFile} from 'node:fs/promises';
+import {randomUUID} from 'node:crypto';
 import {fileURLToPath} from 'node:url';
 import {KeyStore} from './lib/auth.js';
-import {AdminAuth,DashboardAuth,UserStore,normalizeEmail,publicUser,validUserInput} from './lib/admin.js';
+import {AdminAuth,DashboardAuth,UserStore,normalizeEmail,publicUser,validUserInput,passwordVerifier,userEntitlement} from './lib/admin.js';
+import {TrialStore} from './lib/trial.js';
+import {createMailer} from './lib/mailer.js';
 import {FixedWindow,SingleFlight} from './lib/limits.js';
 import {UsageStore} from './lib/usage.js';
 import {ArtifactStore} from './lib/artifacts.js';
@@ -12,24 +17,33 @@ import {dispatch} from './lib/protocol.js';
 const MAX=12*1024*1024, ADMIN_MAX=64*1024;
 
 export async function createApp(o={}){
+  const trustProxy=o.trustProxy===true||process.env.TRUST_PROXY==='true'||process.env.TRUST_PROXY==='1';
   const state=o.stateDir||process.env.MCP_STATE_DIR||join(process.cwd(),'mcp-state'),now=o.now||Date.now;
   const keys=new KeyStore(join(state,'keys.json')),users=new UserStore(join(state,'users.json'),{now}),usage=new UsageStore(join(state,'usage.json'));
   const admin=new AdminAuth(join(state,'admin-sessions.json'),{email:o.adminEmail??process.env.ADMIN_EMAIL,salt:o.adminPasswordSalt??process.env.ADMIN_PASSWORD_SALT,hash:o.adminPasswordHash??process.env.ADMIN_PASSWORD_HASH,ttlMs:Number(o.adminSessionTtlMs??process.env.ADMIN_SESSION_TTL_MS??28800000),now});
   const dashboard=new DashboardAuth(join(state,'dashboard-sessions.json'),{users,keys,ttlMs:Number(o.dashboardSessionTtlMs??process.env.DASHBOARD_SESSION_TTL_MS??28800000),now});
   const artifacts=o.artifacts||new ArtifactStore(join(state,'artifacts'));
-  await Promise.all([keys.load(),users.load(),usage.load(),admin.load(),dashboard.load(),artifacts.init()]);
+  let trial=o.trialStore??null,mailer=o.mailer??null,trialConfigured=true;
+  try{if(!trial)trial=new TrialStore(join(state,'trial.json'),{ledgerSecret:o.trialLedgerSecret??process.env.TRIAL_LEDGER_SECRET});if(!mailer)mailer=createMailer(process.env)}catch{trialConfigured=false;trial=null;mailer=null}
+  await Promise.all([keys.load(),users.load(),usage.load(),admin.load(),dashboard.load(),artifacts.init(),trial?.load?.()]);
+  const activationJournal=join(state,'activation-journal.json');
+  if(trial)await recoverActivationJournal(activationJournal,{users,trial,dashboard});
   const cleanupIntervalMs=positive(o.artifactCleanupIntervalMs??process.env.ARTIFACT_CLEANUP_INTERVAL_MS,900000);let cleanupRunning=null;
   const cleanup=()=>cleanupRunning||(cleanupRunning=Promise.resolve().then(()=>artifacts.cleanup()).catch(()=>{}).finally(()=>cleanupRunning=null));await cleanup();
   const artifactCleanupTimer=setInterval(cleanup,cleanupIntervalMs);artifactCleanupTimer.unref();
+  let trialCleanupRunning=null;const trialCleanup=()=>trial&&!trialCleanupRunning?(trialCleanupRunning=trial.cleanup().catch(()=>{}).finally(()=>trialCleanupRunning=null)):trialCleanupRunning;await trialCleanup();const trialCleanupTimer=setInterval(trialCleanup,positive(o.trialCleanupIntervalMs,900000));trialCleanupTimer.unref();
   const gen=new GenClient({baseUrl:o.genUrl||process.env.GEN_URL,apiKey:o.genKey||process.env.GEN_API_KEY});
   const tools=createTools(gen,artifacts,{publicBaseUrl:o.publicBaseUrl||process.env.PUBLIC_BASE_URL||'',limits:o.limits});
-  const rate=new FixedWindow(now,{maxKeys:o.rateLimitMaxKeys||10000}),singleFlight=new SingleFlight(),adminRate=new FixedWindow(now,{maxKeys:10000}),bodyTimeoutMs=positive(o.bodyTimeoutMs??process.env.BODY_TIMEOUT_MS,10000);let closing=false;
+  const rate=new FixedWindow(now,{maxKeys:o.rateLimitMaxKeys||10000}),singleFlight=new SingleFlight(),adminRate=new FixedWindow(now,{maxKeys:10000}),trialAttemptRate=new FixedWindow(now,{maxKeys:positive(o.trialAttemptRateMaxKeys??process.env.TRIAL_ATTEMPT_RATE_MAX_KEYS,10000)}),bodyTimeoutMs=positive(o.bodyTimeoutMs??process.env.BODY_TIMEOUT_MS,10000);let closing=false;
   let mutationTail=Promise.resolve();const mutate=fn=>{const run=mutationTail.then(fn,fn);mutationTail=run.catch(()=>{});return run};
   const server=http.createServer(async(req,res)=>{security(res);try{
+    req.clientIp=clientIp(req,trustProxy);
     const url=new URL(req.url||'/','http://localhost');
-    if(req.method==='GET'&&url.pathname==='/health')return json(res,closing?503:200,{status:closing?'stopping':'ok'});
+    if(req.method==='GET'&&url.pathname==='/health')return json(res,closing?503:200,{status:closing?'stopping':'ok',trial:trialConfigured?'ready':'unavailable'});
+    if(req.method==='POST'&&(url.pathname==='/auth/trial/request'||url.pathname==='/auth/trial/verify')){if(!trialConfigured)return json(res,503,{error:'Service unavailable'});const kind=url.pathname.endsWith('/verify')?'verify':'request',limit=Number(kind==='verify'?(o.trialVerifyAttemptLimit??process.env.TRIAL_VERIFY_ATTEMPT_LIMIT??20):(o.trialRequestAttemptLimit??process.env.TRIAL_REQUEST_ATTEMPT_LIMIT??10)),ipKey=trial.opaqueIpKey(req.clientIp),rl=trialAttemptRate.take(`${kind}:${ipKey}`,limit);if(!rl.ok){res.setHeader('retry-after',String(Math.ceil(rl.retryAfterMs/1000)));return json(res,429,{error:'Too many requests'})}}
     if(needsAdminBody(req.method,url.pathname)){const parsed=await readAdminJson(req,res,bodyTimeoutMs);if(!parsed.ok)return;req.parsedBody=parsed.value}
-    if(url.pathname.startsWith('/auth/'))return await mutate(()=>handleAuth(req,res,url,{admin,dashboard,users,keys,adminRate,now,o}));
+    if(url.pathname==='/auth/trial/request')return await handleTrialRequest(req,res,{trial,mailer,trialConfigured,users,adminRate,now,o,mutate});
+    if(url.pathname.startsWith('/auth/'))return await mutate(()=>handleAuth(req,res,url,{admin,dashboard,users,keys,trial,trialConfigured,adminRate,now,o,activationJournal}));
     if(url.pathname.startsWith('/profile'))return await mutate(()=>handleProfile(req,res,url,{dashboard,users,keys,adminRate,now,o}));
     if(url.pathname.startsWith('/dashboard/'))return await handleDashboard(req,res,url,{dashboard,users,gen,usage,rate,singleFlight});
     if(url.pathname.startsWith('/admin/'))return await mutate(()=>handleAdmin(req,res,url,{admin,dashboard,users,keys,usage,adminRate,now,o}));
@@ -45,8 +59,8 @@ export async function createApp(o={}){
       const answer=await dispatch(query,tools),feature=mcpFeature(query);if(feature&&answer&&!answer.result?.isError)await usage.record(actor,feature).catch(()=>{});if(answer===null){res.writeHead(202);return res.end()}return json(res,200,answer)
     }finally{release()}
   }catch{return json(res,500,{error:'Internal error'})}});
-  async function close(){if(closing)return;closing=true;clearInterval(artifactCleanupTimer);await cleanupRunning;tools.close?.();await new Promise(resolve=>server.close(()=>resolve()));await usage.close()}
-  return {server,keys,users,usage,admin,dashboard,artifacts,tools,rate,singleFlight,artifactCleanupTimer,close};
+  async function close(){if(closing)return;closing=true;clearInterval(artifactCleanupTimer);clearInterval(trialCleanupTimer);await Promise.all([cleanupRunning,trialCleanupRunning]);tools.close?.();await new Promise(resolve=>server.close(()=>resolve()));await Promise.all([usage.close(),trial?.close?.()])}
+  return {server,keys,users,usage,admin,dashboard,trial,artifacts,tools,rate,trialAttemptRate,singleFlight,artifactCleanupTimer,close};
 }
 
 const DASHBOARD_ROUTES=new Map([
@@ -60,6 +74,7 @@ const DASHBOARD_ROUTES=new Map([
 async function handleDashboard(req,res,url,{dashboard,users,gen,usage,rate,singleFlight}){
   const path=DASHBOARD_ROUTES.get(`${req.method} ${url.pathname}`);if(!path)return notFound(res);
   const session=await dashboard.validate(sessionCookie(req));if(!session)return unauthorized(res);
+  if(session.entitlement==='profile-only')return json(res,403,{error:'Forbidden'});
   const actor=session.role==='user'?`user:${session.user.id}`:'admin',rpm=session.role==='user'?(users.get(session.user.id)?.rpmLimit??20):null;
   let release=null;if(req.method==='POST'&&session.role==='user'){const rl=rate.take(actor,rpm);res.setHeader('x-ratelimit-limit',String(rpm));res.setHeader('x-ratelimit-remaining',String(Math.max(0,rl.remaining??0)));if(!rl.ok){res.setHeader('retry-after',String(Math.ceil(rl.retryAfterMs/1000)));return json(res,429,{error:'rate limit',rpmLimit:rpm})}release=singleFlight.acquire(actor);if(!release){res.setHeader('retry-after','1');return json(res,429,{error:'Only one active API request is allowed per account'})}}
   let value; if(req.method==='POST'){try{value=JSON.parse(await body(req,MAX))}catch{release?.();return json(res,400,{error:'Invalid request'})}}
@@ -67,33 +82,45 @@ async function handleDashboard(req,res,url,{dashboard,users,gen,usage,rate,singl
 }
 
 async function handleAuth(req,res,url,c){
-  const ip=req.socket.remoteAddress||'unknown';
+  const ip=req.clientIp;
   if(req.method==='POST'&&url.pathname==='/auth/login'){
     const limit=c.adminRate.take(`dashboard-login:${ip}`,Number(c.o.adminLoginRateLimit||10));if(!limit.ok)return json(res,429,{error:'Too many requests'});
     const v=req.parsedBody;if(!v||Object.keys(v).some(k=>!['email','credential'].includes(k))||typeof v.email!=='string'||typeof v.credential!=='string')return json(res,400,{error:'Invalid request'});
     let identity=null,legacy=await c.admin.login(v.email,v.credential);if(legacy){await c.admin.logout(legacy);identity={role:'admin',user:{email:c.admin.email}}}
-    if(!identity){const user=c.users.findByEmail(v.email);if(user&&user.active&&(user.expiresAt===null||Date.parse(user.expiresAt)>c.now())&&c.users.verifyPassword(user,v.credential))identity={role:'user',userId:user.id}}
+    if(!identity){const user=c.users.findByEmail(v.email);if(user&&userEntitlement(user,c.now())&&c.users.verifyPassword(user,v.credential))identity={role:'user',userId:user.id}}
     if(!identity)return json(res,401,{error:'Invalid credentials'});const token=await c.dashboard.create(identity);if(!token)return json(res,429,{error:'Session limit reached'});const session=await c.dashboard.validate(token);res.setHeader('set-cookie',sessionCookieHeader(token));return json(res,200,{authenticated:true,...session});
+  }
+  if(req.method==='POST'&&url.pathname==='/auth/trial/verify'){
+    if(!c.trialConfigured)return json(res,503,{error:'Service unavailable'});const v=req.parsedBody;
+    if(!v||Object.keys(v).length!==2||typeof v.email!=='string'||typeof v.otp!=='string'||!/^\d{6}$/.test(v.otp))return json(res,400,{error:'Invalid request'});let email;try{email=normalizeTrialEmail(v.email)}catch{return json(res,400,{error:'Invalid request'})}
+    const begun=await c.trial.beginVerification(email,v.otp).catch(()=>null);if(!begun?.ok)return json(res,400,{error:'Invalid or expired code'});const us=c.users.snapshot(),ts=await c.trial.snapshot(),ss=c.dashboard.snapshot();await writeJournal(c.activationJournal,{version:1,users:us,trial:ts,dashboard:ss});try{const stamp=c.now(),user=await c.users.createTrial({email,label:email.split('@')[0].slice(0,200),passwordVerifier:begun.passwordVerifier,now:stamp});await c.trial.commitActivation(begun.reservationId,{userId:user.id,verifiedAt:stamp});const token=await c.dashboard.create({role:'user',userId:user.id});if(!token)throw new Error('session failed');await unlink(c.activationJournal);const session=await c.dashboard.validate(token);res.setHeader('set-cookie',sessionCookieHeader(token));return json(res,201,{authenticated:true,...session})}catch(e){let clean=true;for(const op of [()=>c.users.restore(us),()=>c.trial.restore(ts),()=>c.dashboard.restore(ss),()=>c.trial.abortActivation(begun.reservationId)])try{await op()}catch{clean=false}if(clean)await unlink(c.activationJournal).catch(()=>{clean=false});throw e}
   }
   const token=sessionCookie(req),session=await c.dashboard.validate(token);
   if(req.method==='GET'&&url.pathname==='/auth/session')return session?json(res,200,{authenticated:true,...session}):unauthorized(res);
   if(req.method==='POST'&&url.pathname==='/auth/logout'){if(token)await c.dashboard.logout(token);res.setHeader('set-cookie',sessionCookieHeader('',true));res.writeHead(204);return res.end()}
   return notFound(res);
 }
+async function handleTrialRequest(req,res,c){
+  if(!c.trialConfigured)return json(res,503,{error:'Service unavailable'});const v=req.parsedBody;if(!v||Object.keys(v).length!==3||typeof v.email!=='string'||typeof v.password!=='string'||typeof v.confirmPassword!=='string'||v.password!==v.confirmPassword||v.password.length<10||v.password.length>1024)return json(res,400,{error:'Invalid request'});let email;try{email=normalizeTrialEmail(v.email)}catch{return json(res,400,{error:'Invalid request'})}const started=Date.now(),floor=Math.max(0,Number(c.o.trialRequestMinResponseMs??process.env.TRIAL_REQUEST_MIN_RESPONSE_MS??500)||0),accepted=async()=>{const wait=floor-(Date.now()-started);if(wait>0)await new Promise(resolve=>setTimeout(resolve,wait));return json(res,202,{accepted:true,message:'Jika memenuhi syarat, kode verifikasi telah dikirim.'})};const ip=req.clientIp;let r;try{r=await c.mutate(async()=>{if(c.users.findByEmail(email)||await c.trial.hasConsumed(email))return null;return c.trial.reserveSend(email,passwordVerifier(v.password),{opaqueIp:ip})})}catch{return accepted()}if(!r)return accepted();try{await c.mailer.sendTrialOtp({to:email,otp:r.otp,expiresMinutes:10});await c.mutate(()=>c.trial.commitSend(r.reservationId))}catch{await c.trial.abortSend(r.reservationId).catch(()=>{})}return accepted()
+}
+
+async function writeJournal(file,value){await mkdir(dirname(file),{recursive:true,mode:0o700});const tmp=`${file}.${process.pid}.${randomUUID()}.tmp`;await writeFile(tmp,JSON.stringify(value),{mode:0o600});await rename(tmp,file)}
+async function recoverActivationJournal(file,stores){let value;try{value=JSON.parse(await readFile(file,'utf8'))}catch(e){if(e.code==='ENOENT')return;throw e}if(value?.version!==1||!Array.isArray(value.users)||!value.trial||!Array.isArray(value.dashboard))throw new Error('Invalid activation recovery journal');await stores.users.restore(value.users);await stores.trial.restore(value.trial);await stores.dashboard.restore(value.dashboard);await unlink(file)}
+function normalizeTrialEmail(v){if(typeof v!=='string')throw new Error();const e=v.trim().toLowerCase();if(!/^[^\s@,;<>]+@[^\s@,;<>]+\.[^\s@,;<>]+$/.test(e))throw new Error();return e}
 
 async function handleProfile(req,res,url,c){
   const oldToken=sessionCookie(req),session=await c.dashboard.validate(oldToken);if(!session)return unauthorized(res);
   if(req.method==='GET'&&url.pathname==='/profile'){if(session.role==='admin')return json(res,200,{role:'admin',user:session.user,remainingMs:null});const u=c.users.get(session.user.id),key=u.keyId&&c.keys.records.find(k=>k.id===u.keyId&&k.active),remainingMs=u.expiresAt===null?null:Math.max(0,Math.floor(Date.parse(u.expiresAt)-c.now()));return json(res,200,{role:'user',user:publicUser(u),remainingMs,hasApiKey:Boolean(key),...(key?{keyId:key.id,keyCreatedAt:key.createdAt}:{})})}
   if(session.role!=='user')return json(res,403,{error:'Forbidden'});const u=c.users.get(session.user.id);
-  const rl=c.adminRate.take(`profile:${u.id}`,Number(c.o.profileRateLimit??30));if(!rl.ok)return json(res,429,{error:'Too many requests'});
+  const rl=c.adminRate.take(`profile:${u.id}:${req.clientIp}`,Number(c.o.profileRateLimit??30));if(!rl.ok)return json(res,429,{error:'Too many requests'});
   if(req.method==='POST'&&url.pathname==='/profile/password'){const v=req.parsedBody,allowed=['currentPassword','newPassword','confirmPassword'];if(!v||Object.keys(v).length!==3||Object.keys(v).some(k=>!allowed.includes(k))||typeof v.currentPassword!=='string'||typeof v.newPassword!=='string'||typeof v.confirmPassword!=='string'||v.newPassword!==v.confirmPassword||v.newPassword.length<10||v.newPassword.length>1024)return json(res,400,{error:'Invalid request'});if(!c.users.verifyPassword(u,v.currentPassword))return json(res,401,{error:'Invalid credentials'});await c.users.setPassword(u.id,v.newPassword);await c.dashboard.revokeUser(u.id);const token=await c.dashboard.create({role:'user',userId:u.id});res.setHeader('set-cookie',sessionCookieHeader(token));return json(res,200,{changed:true})}
-  if(req.method==='POST'&&url.pathname==='/profile/api-key'){const made=await c.keys.replaceForUser(u.keyId,u.label||u.email,{userId:u.id,email:u.email,limit:u.rpmLimit??20},{commit:id=>c.users.commitKey(u.id,id),rollback:id=>c.users.restoreKey(u.id,id)});return json(res,201,{key:made.key,keyId:made.id,createdAt:c.keys.records.find(k=>k.id===made.id).createdAt,rpmLimit:u.rpmLimit??20})}
+  if(req.method==='POST'&&url.pathname==='/profile/api-key'){if(session.entitlement==='profile-only')return json(res,403,{error:'Forbidden'});const made=await c.keys.replaceForUser(u.keyId,u.label||u.email,{userId:u.id,email:u.email,limit:u.rpmLimit??20},{commit:id=>c.users.commitKey(u.id,id),rollback:id=>c.users.restoreKey(u.id,id)});return json(res,201,{key:made.key,keyId:made.id,createdAt:c.keys.records.find(k=>k.id===made.id).createdAt,rpmLimit:u.rpmLimit??20})}
   if(req.method==='DELETE'&&url.pathname==='/profile/api-key'){await deleteKey(c,u);res.writeHead(204);return res.end()}
   return notFound(res);
 }
 
 async function handleAdmin(req,res,url,c){
-  const ip=req.socket.remoteAddress||'unknown',limit=c.adminRate.take(`admin:${ip}`,Number(c.o.adminRateLimit||60));if(!limit.ok)return json(res,429,{error:'Too many requests'});
+  const ip=req.clientIp,limit=c.adminRate.take(`admin:${ip}`,Number(c.o.adminRateLimit||60));if(!limit.ok)return json(res,429,{error:'Too many requests'});
   if(req.method==='POST'&&url.pathname==='/admin/login'){
     if(!c.admin.configured)return json(res,503,{error:'Admin authentication unavailable'});
     const loginLimit=c.adminRate.take(`login:${ip}`,Number(c.o.adminLoginRateLimit||10));if(!loginLimit.ok)return json(res,429,{error:'Too many requests'});
@@ -118,7 +145,7 @@ async function handleAdmin(req,res,url,c){
 }
 async function deleteKey(c,user){const us=c.users.snapshot(),ks=c.keys.snapshot();try{if(user.keyId)await c.keys.revoke(user.keyId);await c.users.update(user.id,{keyId:null})}catch(error){try{await c.keys.restore(ks)}catch{}try{await c.users.restore(us)}catch{}throw error}}
 async function hardDelete(c,id){const us=c.users.snapshot(),ks=c.keys.snapshot(),ss=c.dashboard.snapshot();try{const u=c.users.get(id);if(u?.keyId)await c.keys.revoke(u.keyId);await c.dashboard.revokeUser(id);await c.users.delete(id)}catch(error){try{await c.keys.restore(ks)}catch{}try{await c.dashboard.restore(ss)}catch{}try{await c.users.restore(us)}catch{}throw error}}
-function needsAdminBody(method,path){return method==='POST'&&(path==='/auth/login'||path==='/profile/password'||path==='/admin/login'||path==='/admin/users')||method==='PATCH'&&/^\/admin\/users\/[0-9a-f-]+$/i.test(path)}
+function needsAdminBody(method,path){return method==='POST'&&(path==='/auth/login'||path==='/auth/trial/request'||path==='/auth/trial/verify'||path==='/profile/password'||path==='/admin/login'||path==='/admin/users')||method==='PATCH'&&/^\/admin\/users\/[0-9a-f-]+$/i.test(path)}
 async function readAdminJson(req,res,timeoutMs){try{return {ok:true,value:JSON.parse(await body(req,ADMIN_MAX,timeoutMs))}}catch(error){if(error.code==='BODY_TIMEOUT'){res.setHeader('connection','close');json(res,408,{error:'Request timeout'});return {ok:false}}json(res,400,{error:'Invalid request'});return {ok:false}}}
 function body(req,max,timeoutMs=10000){return new Promise((resolve,reject)=>{let n=0,a=[],done=false;const finish=(error,value)=>{if(done)return;done=true;clearTimeout(timer);error?reject(error):resolve(value)};const timer=setTimeout(()=>{const error=new Error('body timeout');error.code='BODY_TIMEOUT';finish(error);req.resume()},timeoutMs);req.on('data',chunk=>{n+=chunk.length;if(n>max){const error=new Error('too large');error.code='BODY_TOO_LARGE';finish(error);req.resume()}else if(!done)a.push(chunk)});req.on('end',()=>finish(null,Buffer.concat(a).toString()));req.on('aborted',()=>finish(new Error('aborted')));req.on('error',finish)})}
 function bearer(req){return req.headers.authorization?.match(/^Bearer ([A-Za-z0-9_-]{20,})$/)?.[1]}
@@ -126,6 +153,20 @@ function sessionCookie(req){const raw=req.headers.cookie;return typeof raw==='st
 function sessionCookieHeader(token,clear=false){return `dashboard_session=${token}; Path=/; HttpOnly; Secure; SameSite=Lax${clear?'; Max-Age=0':''}`}
 function json(res,status,value){res.writeHead(status,{'content-type':'application/json'});res.end(JSON.stringify(value))}function unauthorized(res){return json(res,401,{error:'Unauthorized'})}function notFound(res){res.writeHead(404);res.end()}
 function positive(v,fallback){v=Number(v);return Number.isFinite(v)&&v>0?v:fallback}
+export function clientIp(req,trustProxy=false){
+  const socket=normalizeIp(req?.socket?.remoteAddress)||'unknown';
+  if(trustProxy!==true||!isTrustedPeer(socket))return socket;
+  const raw=req?.headers?.['x-forwarded-for'];
+  if(typeof raw!=='string'||raw.length===0||/[\x00-\x1f\x7f]/.test(raw))return socket;
+  const parts=raw.split(',');
+  if(!parts.length)return socket;
+  const parsed=[];
+  for(const part of parts){const value=part.trim(),ip=normalizeIp(value);if(!value||!ip)return socket;parsed.push(ip)}
+  for(let i=parsed.length-1;i>=0;i--)if(!isTrustedPeer(parsed[i]))return parsed[i];
+  return parsed.at(-1)||socket;
+}
+function normalizeIp(value){if(typeof value!=='string')return null;const mapped=value.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/i);if(mapped&&net.isIP(mapped[1])===4)return mapped[1];return net.isIP(value)?value.toLowerCase():null}
+function isTrustedPeer(ip){const family=net.isIP(ip);if(family===4){const n=ip.split('.').map(Number);return n[0]===10||n[0]===127||n[0]===169&&n[1]===254||n[0]===172&&n[1]>=16&&n[1]<=31||n[0]===192&&n[1]===168}if(family===6)return ip==='::1'||ip.startsWith('fc')||ip.startsWith('fd')||/^fe[89ab]/.test(ip);return false}
 function mcpFeature(query){if(query?.method!=='tools/call')return null;return {generate_image:'imageGenerate',edit_image:'imageEdit',analyze_image:'vision',chat_text:'chat',generate_audio:'audio'}[query.params?.name]||null}
 function dashboardFeature(path,value){if(path==='/v1/images/generations')return'imageGenerate';if(path==='/v1/images/variations')return'imageEdit';if(path==='/v1/audio/speech')return'audio';if(path==='/v1/chat/completions')return value?.referenceImage||value?.image?'vision':'chat';return null}
 function featureCount(feature,value){if(feature!=='imageGenerate'&&feature!=='imageEdit')return 1;const data=Array.isArray(value?.data)?value.data.length:0,images=Array.isArray(value?.images)?value.images.length:0,results=Array.isArray(value?.results)?value.results.filter(item=>item?.image||item?.url||item?.dataUrl).length:0;return Math.max(1,data,images,results)}

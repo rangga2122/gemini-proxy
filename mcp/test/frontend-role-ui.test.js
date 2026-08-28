@@ -76,3 +76,41 @@ test('admin configures per-account RPM and sees separated feature totals', () =>
 test('API response values are rendered through textContent', () => {
   assert.doesNotMatch(html, /innerHTML\s*=\s*(?:data|user|profile)/);
 });
+
+test('trial signup and OTP flow has its exact public contract', () => {
+  for (const id of ['openTrial', 'loginTrial', 'trialScreen', 'trialSignupForm', 'trialEmail', 'trialPassword', 'trialConfirmPassword', 'trialOtpForm', 'trialOtp', 'trialMaskedEmail', 'trialResend', 'trialCountdown', 'trialError']) {
+    assert.match(html, new RegExp(`id="${id}"`));
+  }
+  assert.match(html, /Mulai Trial Gratis 3 Hari/);
+  assert.match(html, /Daftar Trial 3 Hari/);
+  assert.match(html, /fetch\(`\$\{BASE\}\/auth\/trial\/request`,\s*\{\s*method:'POST'/);
+  assert.match(html, /fetch\(`\$\{BASE\}\/auth\/trial\/verify`,\s*\{\s*method:'POST'/);
+  assert.match(html, /JSON\.stringify\(\{email:trialFlow\.email,password,confirmPassword:password\}\)/);
+  assert.doesNotMatch(html, /trialExpiresAt/);
+  assert.match(html, /password\.length<10\|\|password\.length>1024/);
+  assert.match(html, /\^\\d\{6\}\$/);
+  assert.match(html, /clearTrialState\(\)/);
+  assert.doesNotMatch(html, /(?:localStorage|sessionStorage)/);
+});
+
+test('trial and profile-only entitlement UI is gated and timers are cleaned up', () => {
+  assert.match(html, /entitlement\s*===\s*'profile-only'/);
+  assert.match(html, /\['profil','dokumentasi'\]\.includes\(id\)/);
+  assert.match(html, /Masa Trial Berakhir/);
+  assert.match(html, /Hubungi admin/);
+  assert.match(html, /Trial Aktif/);
+  assert.match(html, /Trial Habis/);
+  assert.match(html, /Akun Aktif/);
+  assert.match(html, /clearInterval\(trialActiveTimer\)/);
+  for (const id of ['trialStatusBox', 'trialStatusLabel', 'trialOriginalEnd', 'trialLiveCountdown', 'profileAccountType', 'profileTrialDates', 'profileCurrentExpiry', 'profileOnlyNotice']) {
+    assert.match(html, new RegExp(`id="${id}"`));
+  }
+});
+
+test('document IDs are unique and inline JavaScript parses', () => {
+  const ids = [...html.matchAll(/\sid="([^"]+)"/g)].map(match => match[1]);
+  assert.equal(new Set(ids).size, ids.length);
+  const script = html.match(/<script>([\s\S]*?)<\/script>/)?.[1];
+  assert.ok(script);
+  assert.doesNotThrow(() => new Function(script));
+});

@@ -1,0 +1,13 @@
+import nodemailer from 'nodemailer';
+const REQUIRED=['SMTP_HOST','SMTP_USER','SMTP_PASS','SMTP_FROM_EMAIL','SMTP_FROM_NAME'];
+function requiredString(c,k){const v=c?.[k];if(typeof v!=='string'||!v.trim())throw new TypeError(`${k} must be a non-empty string`);return v.trim();}
+function parsePort(v){const n=typeof v==='string'&&v.trim()?Number(v):v;if(!Number.isInteger(n)||n<1||n>65535)throw new TypeError('SMTP_PORT must be an integer between 1 and 65535');return n;}
+function parseSecure(v){if(typeof v==='boolean')return v;if(typeof v==='string'){v=v.trim().toLowerCase();if(v==='true')return true;if(v==='false')return false;}throw new TypeError('SMTP_SECURE must be true or false');}
+function mailbox(v,label){if(typeof v!=='string'||v!==v.trim()||/[\x00-\x1f\x7f]/.test(v)||!/^[^\s@,;<>]+@[^\s@,;<>]+\.[^\s@,;<>]+$/.test(v))throw new TypeError(`${label} must be one valid email address`);return v;}
+function header(v,label){if(/[\x00-\x1f\x7f]/.test(v))throw new TypeError(`${label} contains invalid header characters`);return v;}
+function formatFrom(n,e){return `"${n.replaceAll('\\','\\\\').replaceAll('"','\\"')}" <${e}>`;}
+export function createMailer(config,options={}){
+ const p={};for(const k of REQUIRED)p[k]=requiredString(config,k);p.SMTP_PORT=parsePort(config?.SMTP_PORT);p.SMTP_SECURE=parseSecure(config?.SMTP_SECURE);mailbox(p.SMTP_FROM_EMAIL,'SMTP_FROM_EMAIL');header(p.SMTP_FROM_NAME,'SMTP_FROM_NAME');
+ const opts={host:p.SMTP_HOST,port:p.SMTP_PORT,secure:p.SMTP_SECURE,auth:{user:p.SMTP_USER,pass:p.SMTP_PASS}};const transport=options.transport??(options.createTransport??nodemailer.createTransport)(opts);if(!transport||typeof transport.sendMail!=='function')throw new TypeError('SMTP transport must provide sendMail');
+ return Object.freeze({async sendTrialOtp({to,otp,expiresMinutes}={}){mailbox(to,'to');if(typeof otp!=='string'||!/^\d{6}$/.test(otp))throw new TypeError('otp must be exactly six digits');if(typeof expiresMinutes!=='number'||!Number.isFinite(expiresMinutes)||expiresMinutes<=0)throw new TypeError('expiresMinutes must be a positive number');const text=`Kode verifikasi trial Gen Console Anda: ${otp}\n\nKode ini berlaku selama ${expiresMinutes} menit. Jangan bagikan kode ini kepada siapa pun.`;const html=`<p>Kode verifikasi trial Gen Console Anda:</p><p><strong>${otp}</strong></p><p>Kode ini berlaku selama ${expiresMinutes} menit. Jangan bagikan kode ini kepada siapa pun.</p>`;const info=await transport.sendMail({from:formatFrom(p.SMTP_FROM_NAME,p.SMTP_FROM_EMAIL),to,subject:'Kode Verifikasi Trial Gen Console',text,html});return info?.messageId===undefined?{sent:true}:{sent:true,messageId:info.messageId};}});
+}
