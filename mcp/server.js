@@ -93,7 +93,7 @@ async function handleAuth(req,res,url,c){
     const limit=c.adminRate.take(`dashboard-login:${ip}`,Number(c.o.adminLoginRateLimit||10));if(!limit.ok)return json(res,429,{error:'Too many requests'});
     const v=req.parsedBody;if(!v||Object.keys(v).some(k=>!['email','credential'].includes(k))||typeof v.email!=='string'||typeof v.credential!=='string')return json(res,400,{error:'Invalid request'});
     let identity=null,legacy=await c.admin.login(v.email,v.credential);if(legacy){await c.admin.logout(legacy);identity={role:'admin',user:{email:c.admin.email}}}
-    if(!identity){const user=c.users.findByEmail(v.email);if(user&&userEntitlement(user,c.now())&&await c.users.consumeLoginCredential(user,v.credential))identity={role:'user',userId:user.id}}
+    if(!identity){const user=c.users.findByEmail(v.email);if(user&&userEntitlement(user,c.now())&&c.users.verifyPassword(user,v.credential))identity={role:'user',userId:user.id}}
     if(!identity)return json(res,401,{error:'Invalid credentials'});const token=await c.dashboard.create(identity);if(!token)return json(res,429,{error:'Session limit reached'});const session=await c.dashboard.validate(token);res.setHeader('set-cookie',sessionCookieHeader(token));return json(res,200,{authenticated:true,...session});
   }
   if(req.method==='POST'&&url.pathname==='/auth/trial/verify'){

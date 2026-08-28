@@ -26,8 +26,8 @@ test('profile is role-aware and an exclusive dashboard view', () => {
   assert.match(html, /id="adminProfileNote"/);
 });
 
-test('login asks for password, one-time OTP, or admin passkey and never API key', () => {
-  assert.match(html, /Password \/ OTP login \/ passkey admin/);
+test('login asks for password or admin passkey and never API key', () => {
+  assert.match(html, /Password \/ passkey admin/);
   assert.doesNotMatch(html, /Passkey \/ API Key/);
 });
 
@@ -101,8 +101,8 @@ test('landing price and profile Pakasir extension flow are present',()=>{
   assert.match(html,/Rp35\.000/);assert.match(html,/60 request per menit/);assert.match(html,/5 Worker Paralel/);assert.match(html,/maksimal 5 request aktif bersamaan/);assert.match(html,/id="billingBlock"/);assert.match(html,/id="billingQr"/);assert.match(html,/\/billing\/plan/);assert.match(html,/\/billing\/order/);assert.match(html,/Masa aktif baru ditambahkan ke sisa waktu/);assert.match(html,/setInterval\(\(\)=>checkBillingPayment\(false\),5000\)/);
 });
 
-test('landing public order collects only email and phone, then shows emailed-access thanks',()=>{
-  for(const id of ['priceOrder','orderScreen','publicOrderForm','orderEmail','orderPhone','publicOrderPayment','publicOrderQr','publicOrderCheck','publicOrderThankYou','publicOrderAccessMessage','publicOrderLogin'])assert.match(html,new RegExp(`id="${id}"`));assert.doesNotMatch(html,/id="(?:openOrder|orderPassword)"/);assert.match(html,/Order Paket Sekarang/);assert.match(html,/password acak dan OTP login akan dikirim/);assert.match(html,/Generate Gambar Unlimited/);assert.match(html,/AI Chat Unlimited/);assert.match(html,/TTS Unlimited/);assert.match(html,/Akun Private/);assert.match(html,/CHATBOT &amp; AI AGENT/);assert.match(html,/ANALISIS GAMBAR/);assert.match(html,/\/billing\/public\/order/);assert.match(html,/JSON\.stringify\(\{email,phone\}\)/);assert.match(html,/publicCheckoutConfigured/);assert.match(html,/credentialDeliveryStatus==='sent'/);assert.match(html,/Inbox atau folder Spam/);assert.doesNotMatch(html,/order\.status==='paid'&&order\.authenticated/);
+test('landing public order uses data, QRIS, and paid-login stages with email and phone only',()=>{
+  for(const id of ['priceOrder','orderScreen','publicOrderForm','orderEmail','orderPhone','publicOrderPayment','publicOrderQr','publicOrderCheck','publicOrderThankYou','publicOrderAccessMessage','paidLoginForm','paidLoginEmail','paidLoginPassword','paidLoginError','publicOrderLogin'])assert.match(html,new RegExp(`id="${id}"`));assert.doesNotMatch(html,/id="(?:openOrder|orderPassword)"/);assert.match(html,/Order Paket Sekarang/);assert.match(html,/Password acak baru dikirim ke email/);assert.match(html,/PEMBAYARAN TERBAYAR/);assert.match(html,/Password dari email/);assert.match(html,/data-order-step="1"/);assert.match(html,/data-order-step="2"/);assert.match(html,/data-order-step="3"/);assert.match(html,/Generate Gambar Unlimited/);assert.match(html,/AI Chat Unlimited/);assert.match(html,/TTS Unlimited/);assert.match(html,/Akun Private/);assert.match(html,/CHATBOT &amp; AI AGENT/);assert.match(html,/ANALISIS GAMBAR/);assert.match(html,/\/billing\/public\/order/);assert.match(html,/JSON\.stringify\(\{email,phone\}\)/);assert.match(html,/publicCheckoutConfigured/);assert.match(html,/credentialDeliveryStatus==='sent'/);assert.match(html,/Inbox, Promosi, atau Spam/);assert.match(html,/paidLoginForm'\)\.addEventListener\('submit'/);assert.doesNotMatch(html,/order\.status==='paid'&&order\.authenticated/);
 });
 
 test('trial and profile-only entitlement UI is gated and timers are cleaned up', () => {
