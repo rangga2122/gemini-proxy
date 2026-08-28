@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
-const html = await readFile(new URL('../../public/index.html', import.meta.url), 'utf8');
+const html = await readFile(new URL('../../public/index.html', import.meta.url), 'utf8').catch(error=>error.code==='ENOENT'?readFile(new URL('../../index.html',import.meta.url),'utf8'):Promise.reject(error));
 
 test('MCP and user management views are mutually exclusive', () => {
   assert.doesNotMatch(html, /id="manageUsersLink"/);
@@ -63,7 +63,7 @@ test('admin creation/reset/revoke/delete use password-era contracts', () => {
 });
 
 test('admin configures per-account RPM and sees separated feature totals', () => {
-  assert.match(html, /id="userRpmLimit"[^>]*min="1"[^>]*max="600"[^>]*value="20"/);
+  assert.match(html, /id="userRpmLimit"[^>]*min="1"[^>]*max="600"[^>]*value="60"/);
   assert.match(html, /adminFetch\('\/admin\/stats'\)/);
   assert.match(html, /rpmLimit:\s*data\.rpmLimit/);
   assert.match(html, /rpmLimit\s*=\s*Number\(rpmInput\.value\)/);
@@ -90,16 +90,23 @@ test('trial signup and OTP flow has its exact public contract', () => {
   assert.match(html, /password\.length<10\|\|password\.length>1024/);
   assert.match(html, /\^\\d\{6\}\$/);
   assert.match(html, /clearTrialState\(\)/);
+  assert.match(html, /Periksa Inbox atau folder Spam/);
   assert.doesNotMatch(html, /(?:localStorage|sessionStorage)/);
+});
+
+test('landing price and profile Pakasir extension flow are present',()=>{
+  assert.match(html,/Rp35\.000/);assert.match(html,/60 request per menit/);assert.match(html,/id="billingBlock"/);assert.match(html,/id="billingQr"/);assert.match(html,/\/billing\/plan/);assert.match(html,/\/billing\/order/);assert.match(html,/Masa aktif baru ditambahkan ke sisa waktu/);assert.match(html,/setInterval\(\(\)=>checkBillingPayment\(false\),5000\)/);
 });
 
 test('trial and profile-only entitlement UI is gated and timers are cleaned up', () => {
   assert.match(html, /entitlement\s*===\s*'profile-only'/);
   assert.match(html, /\['profil','dokumentasi'\]\.includes\(id\)/);
-  assert.match(html, /Masa Trial Berakhir/);
-  assert.match(html, /Hubungi admin/);
+  assert.match(html, /Masa Aktif Berakhir/);
+  assert.match(html, /Perpanjang paket di bawah/);
   assert.match(html, /Trial Aktif/);
   assert.match(html, /Trial Habis/);
+  assert.match(html, /Paket Aktif/);
+  assert.match(html, /Paket Habis/);
   assert.match(html, /Akun Aktif/);
   assert.match(html, /clearInterval\(trialActiveTimer\)/);
   for (const id of ['trialStatusBox', 'trialStatusLabel', 'trialOriginalEnd', 'trialLiveCountdown', 'profileAccountType', 'profileTrialDates', 'profileCurrentExpiry', 'profileOnlyNotice']) {
