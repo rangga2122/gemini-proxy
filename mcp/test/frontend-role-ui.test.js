@@ -99,7 +99,7 @@ test('landing price and profile Pakasir extension flow are present',()=>{
 });
 
 test('landing public order collects account details and opens the console after payment',()=>{
-  for(const id of ['openOrder','priceOrder','orderScreen','publicOrderForm','orderEmail','orderPhone','orderPassword','publicOrderPayment','publicOrderQr','publicOrderCheck'])assert.match(html,new RegExp(`id="${id}"`));assert.match(html,/Order Sekarang/);assert.match(html,/Jika email sudah terdaftar/);assert.match(html,/\/billing\/public\/order/);assert.match(html,/JSON\.stringify\(\{email,password,phone\}\)/);assert.match(html,/order\.status==='paid'&&order\.authenticated/);assert.match(html,/showDashboard\(order\)/);
+  for(const id of ['priceOrder','orderScreen','publicOrderForm','orderEmail','orderPhone','orderPassword','publicOrderPayment','publicOrderQr','publicOrderCheck'])assert.match(html,new RegExp(`id="${id}"`));assert.doesNotMatch(html,/id="openOrder"/);assert.match(html,/Order Paket Sekarang/);assert.match(html,/password lama diganti setelah pembayaran berhasil/);assert.match(html,/Generate Gambar Unlimited/);assert.match(html,/AI Chat Unlimited/);assert.match(html,/TTS Unlimited/);assert.match(html,/Akun Private/);assert.match(html,/CHATBOT &amp; AI AGENT/);assert.match(html,/ANALISIS GAMBAR/);assert.match(html,/\/billing\/public\/order/);assert.match(html,/JSON\.stringify\(\{email,password,phone\}\)/);assert.match(html,/order\.status==='paid'&&order\.authenticated/);assert.match(html,/showDashboard\(order\)/);
 });
 
 test('trial and profile-only entitlement UI is gated and timers are cleaned up', () => {

@@ -19,7 +19,9 @@ The server validates project, order ID, and amount on both transaction creation 
 
 ## Public landing-page checkout
 
-`POST /billing/public/order` accepts exactly an email, password, and Indonesian mobile/WhatsApp number. For an existing email, the current account password must match before an extension order is issued. For a new email, only a salted password verifier—not the raw password—is retained with the pending order. The paid user record is provisioned only after Pakasir reports `completed`.
+`POST /billing/public/order` accepts exactly an email, a new password, and an Indonesian mobile/WhatsApp number. No OTP or current-password check is used in this low-friction checkout. Only a salted password verifier—not the raw password—is retained with the pending order. For a new email, the paid user is provisioned only after Pakasir reports `completed`. For an existing email, the remaining active period is accumulated, the submitted password replaces the old password only after payment is confirmed, all old dashboard sessions become invalid, and the paying browser is logged in automatically.
+
+Security tradeoff: anyone who knows an existing, time-limited account email and completes payment can replace that account's password. Payment confirmation is therefore the ownership barrier for this deliberately short checkout flow. Managed accounts without an expiry cannot be replaced through public checkout.
 
 Checkout status is protected by a random HttpOnly, Secure, SameSite cookie whose SHA-256 hash is stored with the order. A successful payment either creates the paid account or adds one calendar month to the existing future expiry, then rotates existing dashboard sessions and issues a fresh dashboard login cookie. Expired unpaid orders discard their pending password verifier.
 
