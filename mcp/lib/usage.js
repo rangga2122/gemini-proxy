@@ -35,14 +35,12 @@ export class UsageStore {
     }
   }
 
-  record(actorId, feature, count = 1) {
+  record(actorId, feature) {
     if (typeof actorId !== 'string' || !actorId || !USAGE_FEATURES.includes(feature)) return Promise.resolve(false);
-    count = nonNegativeInteger(count);
-    if (count < 1) return Promise.resolve(false);
     const run = this.tail.then(async () => {
       const actor = this.data.actors[actorId] ||= emptyCounts();
-      actor[feature] += count;
-      this.data.totals[feature] += count;
+      actor[feature] += 1;
+      this.data.totals[feature] += 1;
       await this.save();
       return true;
     });

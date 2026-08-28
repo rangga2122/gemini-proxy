@@ -11,7 +11,8 @@ test('usage totals persist and remain separated by account and feature', async (
   const store = new UsageStore(file);
   await store.load();
   await Promise.all([
-    store.record('user:one', 'imageGenerate', 2),
+    store.record('user:one', 'imageGenerate'),
+    store.record('user:one', 'imageGenerate'),
     store.record('user:one', 'imageEdit'),
     store.record('user:two', 'chat'),
     store.record('admin', 'audio'),

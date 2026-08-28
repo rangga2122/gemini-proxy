@@ -480,9 +480,9 @@ html{color-scheme:dark}[hidden]{display:none!important}body{background:var(--voi
           <h4 id="usageStatsTitle">STATISTIK PENGGUNAAN KESELURUHAN</h4>
           <div class="usage-grid">
             <article class="usage-stat"><span>Total keseluruhan</span><strong id="usageOverall">0</strong></article>
-            <article class="usage-stat"><span>Total gambar</span><strong id="usageImages">0</strong></article>
-            <article class="usage-stat"><span>Generate gambar</span><strong id="usageImageGenerate">0</strong></article>
-            <article class="usage-stat"><span>Edit gambar</span><strong id="usageImageEdit">0</strong></article>
+            <article class="usage-stat"><span>Total request gambar</span><strong id="usageImages">0</strong></article>
+            <article class="usage-stat"><span>Request generate</span><strong id="usageImageGenerate">0</strong></article>
+            <article class="usage-stat"><span>Request edit</span><strong id="usageImageEdit">0</strong></article>
             <article class="usage-stat"><span>Analisis gambar</span><strong id="usageVision">0</strong></article>
             <article class="usage-stat"><span>Chat</span><strong id="usageChat">0</strong></article>
             <article class="usage-stat"><span>Audio</span><strong id="usageAudio">0</strong></article>
@@ -820,7 +820,7 @@ function renderUsers(users, usageUsers = []) {
     const label = document.createElement('div'); label.className = 'user-meta'; label.textContent = user.label || 'Tanpa label'; identity.append(email, label);
     const usage = usageByUser.get(user.id) || {};
     const meta = document.createElement('div'); meta.className = 'user-meta'; meta.textContent = `Kedaluwarsa: ${user.expiresAt ? new Date(user.expiresAt).toLocaleDateString('id-ID') : 'Tidak dibatasi'} · Maks. sesi: ${user.maxSessions} · ${user.rpmLimit || 60} RPM · ${user.workerLimit || 5} worker · Key ID: ${user.keyId || 'Belum ada'}`;
-    const usageMeta = document.createElement('div'); usageMeta.className = 'user-meta'; usageMeta.textContent = `Pemakaian: ${usageNumber(usage.overall)} total · ${usageNumber(usage.images)} gambar · ${usageNumber(usage.vision)} analisis · ${usageNumber(usage.chat)} chat · ${usageNumber(usage.audio)} audio`;
+    const usageMeta = document.createElement('div'); usageMeta.className = 'user-meta'; usageMeta.textContent = `Pemakaian: ${usageNumber(usage.overall)} total · ${usageNumber(usage.images)} request gambar · ${usageNumber(usage.vision)} analisis · ${usageNumber(usage.chat)} chat · ${usageNumber(usage.audio)} audio`;
     identity.append(usageMeta); const badge = document.createElement('span'); const trialEnd=user.trialEndsAt; const badgeLabel=user.trialStartedAt?(trialEnd&&Date.parse(trialEnd)<=Date.now()?'Trial Habis':'Trial Aktif'):'Akun Aktif'; badge.className = `badge${user.active ? '' : ' off'}`; badge.textContent = user.active ? badgeLabel : 'NONAKTIF'; summary.append(identity, meta, badge);
     const edit = document.createElement('div'); edit.className = 'user-edit';
     const labelInput = document.createElement('input'); labelInput.className = 'input'; labelInput.id = `label-${user.id}`; labelInput.maxLength = 200; labelInput.value = user.label || '';
