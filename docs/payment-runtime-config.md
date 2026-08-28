@@ -17,4 +17,10 @@ Store production values only in the root-readable `.env.mcp` file used by the sy
 
 The server validates project, order ID, and amount on both transaction creation and status lookup. It generates the displayed QR from Pakasir's `payment_number`; no API key or provider response is exposed to the browser. Pending orders are also verified in the background, so package activation does not depend on the profile page remaining open.
 
+## Public landing-page checkout
+
+`POST /billing/public/order` accepts exactly an email, password, and Indonesian mobile/WhatsApp number. For an existing email, the current account password must match before an extension order is issued. For a new email, only a salted password verifier—not the raw password—is retained with the pending order. The paid user record is provisioned only after Pakasir reports `completed`.
+
+Checkout status is protected by a random HttpOnly, Secure, SameSite cookie whose SHA-256 hash is stored with the order. A successful payment either creates the paid account or adds one calendar month to the existing future expiry, then rotates existing dashboard sessions and issues a fresh dashboard login cookie. Expired unpaid orders discard their pending password verifier.
+
 The public reverse proxy must route the `/billing/` path prefix to the MCP/dashboard listener, alongside `/auth/`, `/profile`, and `/dashboard/`.

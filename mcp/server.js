@@ -50,7 +50,7 @@ export async function createApp(o={}){
     if(url.pathname==='/auth/trial/request')return await handleTrialRequest(req,res,{trial,mailer,trialConfigured,users,adminRate,now,o,mutate});
     if(url.pathname.startsWith('/auth/'))return await mutate(()=>handleAuth(req,res,url,{admin,dashboard,users,keys,trial,trialConfigured,adminRate,now,o,activationJournal}));
     if(url.pathname.startsWith('/profile'))return await mutate(()=>handleProfile(req,res,url,{dashboard,users,keys,adminRate,now,o}));
-    if(url.pathname.startsWith('/billing/'))return await handleBilling(req,res,url,{billing,dashboard,adminRate});
+    if(url.pathname.startsWith('/billing/'))return await handleBilling(req,res,url,{billing,dashboard,users,adminRate,o});
     if(url.pathname.startsWith('/dashboard/'))return await handleDashboard(req,res,url,{dashboard,users,gen,usage,rate,singleFlight});
     if(url.pathname.startsWith('/admin/'))return await mutate(()=>handleAdmin(req,res,url,{admin,dashboard,users,keys,usage,adminRate,now,o}));
     const match=url.pathname.match(/^\/artifacts\/([a-f0-9]{32})$/);
@@ -111,15 +111,21 @@ async function handleTrialRequest(req,res,c){
 }
 
 async function handleBilling(req,res,url,c){
-  const session=await c.dashboard.validate(sessionCookie(req));if(!session)return unauthorized(res);if(session.role!=='user')return json(res,403,{error:'Forbidden'});
-  const rl=c.adminRate.take(`billing:${session.user.id}:${req.clientIp}`,30);if(!rl.ok){res.setHeader('retry-after',String(Math.ceil(rl.retryAfterMs/1000)));return json(res,429,{error:'Too many requests'})}
   try{
+    if(req.method==='POST'&&url.pathname==='/billing/public/order'){
+      const rl=c.adminRate.take(`billing-public-create:${req.clientIp}`,Number(c.o.publicBillingRateLimit??10));if(!rl.ok){res.setHeader('retry-after',String(Math.ceil(rl.retryAfterMs/1000)));return json(res,429,{error:'Terlalu banyak percobaan. Coba lagi nanti.'})}const value=req.parsedBody,allowed=['email','password','phone'];if(!value||Object.keys(value).length!==3||Object.keys(value).some(key=>!allowed.includes(key))||typeof value.email!=='string'||typeof value.password!=='string'||typeof value.phone!=='string'||value.password.length<10||value.password.length>1024)return json(res,400,{error:'Email, password, atau nomor HP tidak valid.'});let email,phone;try{email=normalizeTrialEmail(value.email);phone=normalizePhone(value.phone)}catch{return json(res,400,{error:'Email, password, atau nomor HP tidak valid.'})}const user=c.users.findByEmail(email);if(user&&!c.users.verifyPassword(user,value.password))return json(res,401,{error:'Email atau password akun tidak valid.'});const created=await c.billing.createPublic({email,phone,user,passwordVerifier:user?null:passwordVerifier(value.password)});res.setHeader('set-cookie',checkoutCookieHeader(created.checkoutToken));return json(res,201,created.order)
+    }
+    if(req.method==='GET'&&url.pathname==='/billing/public/order'){const rl=c.adminRate.take(`billing-public-status:${req.clientIp}`,60);if(!rl.ok)return json(res,429,{error:'Terlalu banyak pemeriksaan.'});const result=await c.billing.latestPublic(checkoutCookie(req),{force:true});return finishPublicCheckout(res,result,c.dashboard)}
+    const publicMatch=url.pathname.match(/^\/billing\/public\/order\/([A-Za-z0-9-]{8,80})$/);if(req.method==='GET'&&publicMatch){const rl=c.adminRate.take(`billing-public-status:${req.clientIp}`,60);if(!rl.ok)return json(res,429,{error:'Terlalu banyak pemeriksaan.'});const result=await c.billing.statusPublic(publicMatch[1],checkoutCookie(req),{force:true});return finishPublicCheckout(res,result,c.dashboard)}
+    const session=await c.dashboard.validate(sessionCookie(req));if(!session)return unauthorized(res);if(session.role!=='user')return json(res,403,{error:'Forbidden'});
+    const rl=c.adminRate.take(`billing:${session.user.id}:${req.clientIp}`,30);if(!rl.ok){res.setHeader('retry-after',String(Math.ceil(rl.retryAfterMs/1000)));return json(res,429,{error:'Too many requests'})}
     if(req.method==='POST'&&url.pathname==='/billing/order'){const user=c.billing.users.get(session.user.id);return json(res,201,await c.billing.create(user))}
     if(req.method==='GET'&&url.pathname==='/billing/order')return json(res,200,{order:await c.billing.latest(session.user.id)});
     const match=url.pathname.match(/^\/billing\/order\/([A-Za-z0-9-]{8,80})$/);if(req.method==='GET'&&match)return json(res,200,await c.billing.status(match[1],session.user.id,{force:true}));
     return notFound(res);
   }catch(error){return json(res,Number.isInteger(error?.status)?error.status:500,{error:Number.isInteger(error?.status)?error.message:'Pembayaran belum dapat diproses.'})}
 }
+async function finishPublicCheckout(res,result,dashboard){if(!result.userId)return json(res,200,result.order);await dashboard.revokeUser(result.userId);const token=await dashboard.create({role:'user',userId:result.userId});if(!token)throw new Error('session failed');const session=await dashboard.validate(token);res.setHeader('set-cookie',[sessionCookieHeader(token),checkoutCookieHeader('',true)]);return json(res,200,{...result.order,authenticated:true,...session})}
 
 async function writeJournal(file,value){await mkdir(dirname(file),{recursive:true,mode:0o700});const tmp=`${file}.${process.pid}.${randomUUID()}.tmp`;await writeFile(tmp,JSON.stringify(value),{mode:0o600});await rename(tmp,file)}
 async function recoverActivationJournal(file,stores){let value;try{value=JSON.parse(await readFile(file,'utf8'))}catch(e){if(e.code==='ENOENT')return;throw e}if(value?.version!==1||!Array.isArray(value.users)||!value.trial||!Array.isArray(value.dashboard))throw new Error('Invalid activation recovery journal');await stores.users.restore(value.users);await stores.trial.restore(value.trial);await stores.dashboard.restore(value.dashboard);await unlink(file)}
@@ -162,12 +168,15 @@ async function handleAdmin(req,res,url,c){
 }
 async function deleteKey(c,user){const us=c.users.snapshot(),ks=c.keys.snapshot();try{if(user.keyId)await c.keys.revoke(user.keyId);await c.users.update(user.id,{keyId:null})}catch(error){try{await c.keys.restore(ks)}catch{}try{await c.users.restore(us)}catch{}throw error}}
 async function hardDelete(c,id){const us=c.users.snapshot(),ks=c.keys.snapshot(),ss=c.dashboard.snapshot();try{const u=c.users.get(id);if(u?.keyId)await c.keys.revoke(u.keyId);await c.dashboard.revokeUser(id);await c.users.delete(id)}catch(error){try{await c.keys.restore(ks)}catch{}try{await c.dashboard.restore(ss)}catch{}try{await c.users.restore(us)}catch{}throw error}}
-function needsAdminBody(method,path){return method==='POST'&&(path==='/auth/login'||path==='/auth/trial/request'||path==='/auth/trial/verify'||path==='/profile/password'||path==='/admin/login'||path==='/admin/users')||method==='PATCH'&&/^\/admin\/users\/[0-9a-f-]+$/i.test(path)}
+function needsAdminBody(method,path){return method==='POST'&&(path==='/auth/login'||path==='/auth/trial/request'||path==='/auth/trial/verify'||path==='/profile/password'||path==='/admin/login'||path==='/admin/users'||path==='/billing/public/order')||method==='PATCH'&&/^\/admin\/users\/[0-9a-f-]+$/i.test(path)}
 async function readAdminJson(req,res,timeoutMs){try{return {ok:true,value:JSON.parse(await body(req,ADMIN_MAX,timeoutMs))}}catch(error){if(error.code==='BODY_TIMEOUT'){res.setHeader('connection','close');json(res,408,{error:'Request timeout'});return {ok:false}}json(res,400,{error:'Invalid request'});return {ok:false}}}
 function body(req,max,timeoutMs=10000){return new Promise((resolve,reject)=>{let n=0,a=[],done=false;const finish=(error,value)=>{if(done)return;done=true;clearTimeout(timer);error?reject(error):resolve(value)};const timer=setTimeout(()=>{const error=new Error('body timeout');error.code='BODY_TIMEOUT';finish(error);req.resume()},timeoutMs);req.on('data',chunk=>{n+=chunk.length;if(n>max){const error=new Error('too large');error.code='BODY_TOO_LARGE';finish(error);req.resume()}else if(!done)a.push(chunk)});req.on('end',()=>finish(null,Buffer.concat(a).toString()));req.on('aborted',()=>finish(new Error('aborted')));req.on('error',finish)})}
 function bearer(req){return req.headers.authorization?.match(/^Bearer ([A-Za-z0-9_-]{20,})$/)?.[1]}
 function sessionCookie(req){const raw=req.headers.cookie;return typeof raw==='string'?raw.split(';').map(x=>x.trim()).find(x=>x.startsWith('dashboard_session='))?.slice('dashboard_session='.length):undefined}
 function sessionCookieHeader(token,clear=false){return `dashboard_session=${token}; Path=/; HttpOnly; Secure; SameSite=Lax${clear?'; Max-Age=0':''}`}
+function checkoutCookie(req){const raw=req.headers.cookie;return typeof raw==='string'?raw.split(';').map(value=>value.trim()).find(value=>value.startsWith('checkout_session='))?.slice('checkout_session='.length):undefined}
+function checkoutCookieHeader(token,clear=false){return `checkout_session=${token}; Path=/billing/public; HttpOnly; Secure; SameSite=Lax${clear?'; Max-Age=0':'; Max-Age=1800'}`}
+function normalizePhone(value){if(typeof value!=='string')throw new Error();let phone=value.trim().replace(/[\s().-]/g,'');if(phone.startsWith('0'))phone=`+62${phone.slice(1)}`;else if(phone.startsWith('62'))phone=`+${phone}`;if(!/^\+628\d{7,11}$/.test(phone))throw new Error();return phone}
 function json(res,status,value){res.writeHead(status,{'content-type':'application/json'});res.end(JSON.stringify(value))}function unauthorized(res){return json(res,401,{error:'Unauthorized'})}function notFound(res){res.writeHead(404);res.end()}
 function positive(v,fallback){v=Number(v);return Number.isFinite(v)&&v>0?v:fallback}
 export function clientIp(req,trustProxy=false){

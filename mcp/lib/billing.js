@@ -1,4 +1,4 @@
-import { randomBytes, randomUUID } from 'node:crypto';
+import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import QRCode from 'qrcode';
@@ -11,7 +11,6 @@ const REQUEST_TIMEOUT_MS = 15_000;
 const DEFAULT_ORDER_TTL_MS = 20 * 60_000;
 
 const clean = value => String(value || '').trim();
-const clone = structuredClone;
 
 export function addCalendarMonths(value, months = PLAN_MONTHS) {
   const source = new Date(value);
@@ -71,17 +70,32 @@ export class BillingService {
     await this.expireOrders();
     const existing=this.data.orders.find(order=>order.userId===user.id&&order.status==='pending'&&Date.parse(order.expiresAt)>this.now());
     if(existing)return this.publicOrder(existing);
-    const orderCode=makeOrderCode(this.now()),payment=await this.client.create({orderId:orderCode,amount:this.price}),stamp=new Date(this.now()).toISOString(),expiresAt=payment.expiredAt||new Date(this.now()+this.orderTtlMs).toISOString();
-    const order={id:randomUUID(),orderCode,userId:user.id,email:user.email,priceIdr:this.price,status:'pending',provider:'pakasir',gatewayProject:payment.project,gatewayOrderId:payment.orderId,gatewayAmount:payment.amount,gatewayFee:payment.fee,totalPayment:payment.totalPayment,paymentMethod:payment.paymentMethod,paymentNumber:payment.paymentNumber,gatewayStatus:'pending',createdAt:stamp,expiresAt,completedAt:null,previousExpiry:null,targetExpiry:null,appliedAt:null};
-    await this.enqueue(async()=>{this.data.orders.push(order);try{await this.persist()}catch(error){this.data.orders=this.data.orders.filter(value=>value!==order);throw error}});
+    const order=await this.newOrder({userId:user.id,email:user.email,phone:user.phone??null,accountAction:'extend'});
     return this.publicOrder(order);
   }
+  async createPublic({email,phone,user=null,passwordVerifier=null}){
+    if(!this.configured)throw billingError('Pembayaran Pakasir belum dikonfigurasi.',503);if(!email||!phone)throw billingError('Data order tidak valid.',400);if(user?.expiresAt===null&&user.accountType!=='trial')throw billingError('Akun tanpa batas waktu tidak memerlukan perpanjangan.',409);if(!user&&this.users.findByEmail(email))throw billingError('Silakan ulangi dengan password akun yang benar.',409);if(!user&&(!passwordVerifier?.passwordSalt||!passwordVerifier?.passwordHash))throw billingError('Data akun baru tidak valid.',400);
+    const key=`public:${user?.id||email}`;if(this.creating.has(key))return this.creating.get(key);const pending=this.createPublicOrder({email,phone,user,passwordVerifier}).finally(()=>this.creating.delete(key));this.creating.set(key,pending);return pending;
+  }
+  async createPublicOrder({email,phone,user,passwordVerifier}){
+    await this.expireOrders();const existing=this.data.orders.find(order=>order.status==='pending'&&(user?order.userId===user.id:!order.userId&&order.email===email)&&Date.parse(order.expiresAt)>this.now()),checkoutToken=randomBytes(32).toString('base64url'),checkoutTokenHash=hashCheckout(checkoutToken);
+    if(existing){await this.enqueue(async()=>{existing.checkoutTokenHash=checkoutTokenHash;existing.phone=phone;if(!user)existing.onboarding={...passwordVerifier};await this.persist()});return {order:await this.publicOrder(existing),checkoutToken}}
+    const order=await this.newOrder({userId:user?.id??null,email,phone,accountAction:user?'extend':'new',checkoutTokenHash,onboarding:user?null:{...passwordVerifier}});return {order:await this.publicOrder(order),checkoutToken};
+  }
+  async newOrder(fields){const orderCode=makeOrderCode(this.now()),payment=await this.client.create({orderId:orderCode,amount:this.price}),stamp=new Date(this.now()).toISOString(),expiresAt=payment.expiredAt||new Date(this.now()+this.orderTtlMs).toISOString(),order={id:randomUUID(),orderCode,...fields,priceIdr:this.price,status:'pending',provider:'pakasir',gatewayProject:payment.project,gatewayOrderId:payment.orderId,gatewayAmount:payment.amount,gatewayFee:payment.fee,totalPayment:payment.totalPayment,paymentMethod:payment.paymentMethod,paymentNumber:payment.paymentNumber,gatewayStatus:'pending',createdAt:stamp,expiresAt,completedAt:null,previousExpiry:null,targetExpiry:null,appliedAt:null};await this.enqueue(async()=>{this.data.orders.push(order);try{await this.persist()}catch(error){this.data.orders=this.data.orders.filter(value=>value!==order);throw error}});return order}
   async status(code,userId,{force=false}={}){
     let order=this.get(clean(code));if(!order)throw billingError('Order tidak ditemukan.',404);if(order.userId!==userId)throw billingError('Order tidak cocok dengan akun.',403);
+    order=await this.refresh(order,{force});return this.publicOrder(order);
+  }
+  async statusPublic(code,checkoutToken,{force=false}={}){
+    let order=this.get(clean(code));if(!order||!validCheckout(order.checkoutTokenHash,checkoutToken))throw billingError('Order tidak ditemukan atau sesi checkout telah berakhir.',401);order=await this.refresh(order,{force});return {order:await this.publicOrder(order),userId:order.status==='paid'?order.userId:null};
+  }
+  async latestPublic(checkoutToken,{force=false}={}){let order=[...this.data.orders].reverse().find(value=>validCheckout(value.checkoutTokenHash,checkoutToken));if(!order)throw billingError('Sesi checkout tidak ditemukan.',401);order=await this.refresh(order,{force});return {order:await this.publicOrder(order),userId:order.status==='paid'?order.userId:null}}
+  async refresh(order,{force=false}={}){
     if(order.status==='pending')order=await this.verify(order.orderCode,{force});
     if(order.status==='pending'&&Date.parse(order.expiresAt)<=this.now()){await this.markExpired(order.orderCode);order=this.get(order.orderCode)}
     if(order.status==='applying')order=await this.apply(order.orderCode,order.completedAt||new Date(this.now()).toISOString());
-    return this.publicOrder(order);
+    return order;
   }
   async latest(userId){const order=[...this.data.orders].reverse().find(value=>value.userId===userId);if(!order)return null;return order.status==='pending'?this.status(order.orderCode,userId):this.publicOrder(order)}
   async verify(code,{force=false}={}){
@@ -91,16 +105,16 @@ export class BillingService {
   }
   async apply(code,completedAt){return this.enqueue(async()=>{
     const order=this.get(code);if(!order)throw billingError('Order tidak ditemukan.',404);if(order.status==='paid')return order;if(!['pending','applying'].includes(order.status))return order;
-    const user=this.users.get(order.userId);if(!user)throw billingError('Pengguna order tidak ditemukan.',404);
-    if(order.status==='pending'){const current=validDate(user.expiresAt),base=current&&Date.parse(current)>this.now()?new Date(current):new Date(this.now());order.previousExpiry=current;order.targetExpiry=addCalendarMonths(base).toISOString();order.completedAt=completedAt;order.gatewayStatus='completed';order.status='applying';await this.persist()}
-    const currentMs=Date.parse(user.expiresAt||''),changes={accountType:'paid',active:true,rpmLimit:Number.isInteger(user.rpmLimit)?user.rpmLimit:DEFAULT_RPM};if(!Number.isFinite(currentMs)||currentMs<Date.parse(order.targetExpiry))changes.expiresAt=order.targetExpiry;if(user.accountType!=='paid'||user.active!==true||user.rpmLimit!==changes.rpmLimit||changes.expiresAt)await this.users.update(user.id,changes);
+    let user=order.userId?this.users.get(order.userId):this.users.findByEmail(order.email);if(!user&&!order.onboarding){order.status='review';order.completedAt=completedAt;order.gatewayStatus='completed';await this.persist();return order}if(!order.userId&&user&&user.sourceOrderCode!==order.orderCode){order.status='review';order.completedAt=completedAt;order.gatewayStatus='completed';order.onboarding=null;await this.persist();return order}
+    if(order.status==='pending'){const current=validDate(user?.expiresAt),base=current&&Date.parse(current)>this.now()?new Date(current):new Date(this.now());order.previousExpiry=current;order.targetExpiry=addCalendarMonths(base).toISOString();order.completedAt=completedAt;order.gatewayStatus='completed';order.status='applying';await this.persist()}
+    if(!user){user=await this.users.createPaid({email:order.email,phone:order.phone,passwordVerifier:order.onboarding,expiresAt:order.targetExpiry,sourceOrderCode:order.orderCode,now:this.now()});order.userId=user.id;order.onboarding=null;await this.persist()}else{const currentMs=Date.parse(user.expiresAt||''),changes={accountType:'paid',active:true,phone:order.phone??user.phone??null,rpmLimit:Number.isInteger(user.rpmLimit)?user.rpmLimit:DEFAULT_RPM};if(!Number.isFinite(currentMs)||currentMs<Date.parse(order.targetExpiry))changes.expiresAt=order.targetExpiry;if(user.accountType!=='paid'||user.active!==true||user.phone!==changes.phone||user.rpmLimit!==changes.rpmLimit||changes.expiresAt)await this.users.update(user.id,changes)}
     order.status='paid';order.appliedAt=new Date(this.now()).toISOString();try{await this.persist()}catch(error){order.status='applying';order.appliedAt=null;throw error}return order;
   })}
   async recoverApplying(){for(const order of this.data.orders.filter(value=>value.status==='applying'))await this.apply(order.orderCode,order.completedAt||new Date(this.now()).toISOString())}
   async checkPending(){for(const order of this.data.orders.filter(value=>value.status==='pending').slice(0,10))try{await this.verify(order.orderCode,{force:true})}catch{}await this.expireOrders()}
-  async expireOrders(){return this.enqueue(async()=>{let changed=false;for(const order of this.data.orders)if(order.status==='pending'&&Date.parse(order.expiresAt)<=this.now()){order.status='expired';changed=true}if(changed)await this.persist()})}
-  async markExpired(code){return this.enqueue(async()=>{const order=this.get(code);if(order?.status==='pending'){order.status='expired';await this.persist()}return order})}
-  async publicOrder(order){const svg=order.status==='pending'?await QRCode.toString(order.paymentNumber,{type:'svg',errorCorrectionLevel:'M',margin:1,width:320,color:{dark:'#000000',light:'#ffffff'}}):null;return {orderCode:order.orderCode,status:order.status==='applying'?'pending':order.status,priceIdr:order.priceIdr,totalPayment:order.totalPayment,gatewayFee:order.gatewayFee,paymentMethod:order.paymentMethod,expiresAt:order.expiresAt,completedAt:order.completedAt,newExpiresAt:order.status==='paid'?order.targetExpiry:null,qrisDataUrl:svg?`data:image/svg+xml;base64,${Buffer.from(svg).toString('base64')}`:null}}
+  async expireOrders(){return this.enqueue(async()=>{let changed=false;for(const order of this.data.orders)if(order.status==='pending'&&Date.parse(order.expiresAt)<=this.now()){order.status='expired';order.onboarding=null;changed=true}if(changed)await this.persist()})}
+  async markExpired(code){return this.enqueue(async()=>{const order=this.get(code);if(order?.status==='pending'){order.status='expired';order.onboarding=null;await this.persist()}return order})}
+  async publicOrder(order){const svg=order.status==='pending'?await QRCode.toString(order.paymentNumber,{type:'svg',errorCorrectionLevel:'M',margin:1,width:320,color:{dark:'#000000',light:'#ffffff'}}):null;return {orderCode:order.orderCode,status:order.status==='applying'?'pending':order.status,accountAction:order.accountAction||'extend',priceIdr:order.priceIdr,totalPayment:order.totalPayment,gatewayFee:order.gatewayFee,paymentMethod:order.paymentMethod,expiresAt:order.expiresAt,completedAt:order.completedAt,newExpiresAt:order.status==='paid'?order.targetExpiry:null,qrisDataUrl:svg?`data:image/svg+xml;base64,${Buffer.from(svg).toString('base64')}`:null}}
   async close(){await this.tail}
 }
 
@@ -109,4 +123,6 @@ function providerMessage(data,fallback){const value=data&&typeof data==='object'
 function nonNegative(value){value=Math.round(Number(value||0));return Number.isFinite(value)&&value>=0?value:0}
 function validDate(value){if(!value)return null;const date=new Date(value);return Number.isFinite(date.getTime())?date.toISOString():null}
 function billingError(message,status=400){return Object.assign(new Error(message),{status})}
+function hashCheckout(value){return createHash('sha256').update(value).digest('hex')}
+function validCheckout(expected,value){if(typeof expected!=='string'||typeof value!=='string')return false;const a=Buffer.from(expected,'hex'),b=Buffer.from(hashCheckout(value),'hex');return a.length===b.length&&timingSafeEqual(a,b)}
 function makeOrderCode(now){const date=new Date(now),ymd=`${date.getUTCFullYear()}${String(date.getUTCMonth()+1).padStart(2,'0')}${String(date.getUTCDate()).padStart(2,'0')}`;return `GEN-${ymd}-${randomBytes(4).toString('hex').toUpperCase()}`}

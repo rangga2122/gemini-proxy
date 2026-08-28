@@ -98,6 +98,10 @@ test('landing price and profile Pakasir extension flow are present',()=>{
   assert.match(html,/Rp35\.000/);assert.match(html,/60 request per menit/);assert.match(html,/id="billingBlock"/);assert.match(html,/id="billingQr"/);assert.match(html,/\/billing\/plan/);assert.match(html,/\/billing\/order/);assert.match(html,/Masa aktif baru ditambahkan ke sisa waktu/);assert.match(html,/setInterval\(\(\)=>checkBillingPayment\(false\),5000\)/);
 });
 
+test('landing public order collects account details and opens the console after payment',()=>{
+  for(const id of ['openOrder','priceOrder','orderScreen','publicOrderForm','orderEmail','orderPhone','orderPassword','publicOrderPayment','publicOrderQr','publicOrderCheck'])assert.match(html,new RegExp(`id="${id}"`));assert.match(html,/Order Sekarang/);assert.match(html,/Jika email sudah terdaftar/);assert.match(html,/\/billing\/public\/order/);assert.match(html,/JSON\.stringify\(\{email,password,phone\}\)/);assert.match(html,/order\.status==='paid'&&order\.authenticated/);assert.match(html,/showDashboard\(order\)/);
+});
+
 test('trial and profile-only entitlement UI is gated and timers are cleaned up', () => {
   assert.match(html, /entitlement\s*===\s*'profile-only'/);
   assert.match(html, /\['profil','dokumentasi'\]\.includes\(id\)/);
