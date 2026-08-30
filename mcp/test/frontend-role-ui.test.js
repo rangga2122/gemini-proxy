@@ -76,6 +76,10 @@ test('admin configures per-account RPM and workers while statistics stay separat
   assert.match(html, /data\.workerLimit\?\?user\.workerLimit\?\?5/);
 });
 
+test('paid users are marked as purchased instead of active trials',()=>{
+  assert.match(html,/isPaid=user\.accountType==='paid'/);assert.match(html,/isTrial=user\.accountType==='trial'/);assert.match(html,/accountExpired\?'Paket Habis':'Sudah Beli'/);assert.match(html,/accountExpired\?'Trial Habis':'Trial Aktif'/);assert.match(html,/\.badge\.paid/);
+});
+
 test('API response values are rendered through textContent', () => {
   assert.doesNotMatch(html, /innerHTML\s*=\s*(?:data|user|profile)/);
 });
