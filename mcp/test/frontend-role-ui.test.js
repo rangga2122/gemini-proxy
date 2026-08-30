@@ -98,7 +98,7 @@ test('trial signup and OTP flow has its exact public contract', () => {
 });
 
 test('landing price and profile Pakasir extension flow are present',()=>{
-  assert.match(html,/Rp35\.000/);assert.match(html,/60 request per menit/);assert.match(html,/5 Worker Paralel/);assert.match(html,/maksimal 5 request aktif bersamaan/);assert.match(html,/id="billingBlock"/);assert.match(html,/id="billingQr"/);assert.match(html,/\/billing\/plan/);assert.match(html,/\/billing\/order/);assert.match(html,/Masa aktif baru ditambahkan ke sisa waktu/);assert.match(html,/setInterval\(\(\)=>checkBillingPayment\(false\),5000\)/);
+  assert.match(html,/Rp35\.000/);assert.match(html,/60 request per menit/);assert.match(html,/5 Worker Paralel/);assert.match(html,/maksimal 5 request aktif bersamaan/);assert.match(html,/NANO BANANA TERBARU/);assert.match(html,/className='model-highlight'/);assert.match(html,/Model generate gambar Nano Banana terbaru/);assert.match(html,/id="billingBlock"/);assert.match(html,/id="billingQr"/);assert.match(html,/\/billing\/plan/);assert.match(html,/\/billing\/order/);assert.match(html,/Masa aktif baru ditambahkan ke sisa waktu/);assert.match(html,/setInterval\(\(\)=>checkBillingPayment\(false\),5000\)/);
 });
 
 test('landing public order uses data, QRIS, and paid-login stages with email and phone only',()=>{
