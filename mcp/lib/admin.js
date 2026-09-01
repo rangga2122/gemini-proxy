@@ -7,7 +7,7 @@ async function load(file){try{const value=JSON.parse(await readFile(file,'utf8')
 export const normalizeEmail=value=>typeof value==='string'?value.trim().toLowerCase():'';
 export const DEFAULT_RPM=60;
 export const DEFAULT_WORKERS=5;
-export const MAX_WORKERS=20;
+export const MAX_WORKERS=10000;
 export const normalizeWorkerLimit=value=>Number.isInteger(value)&&value>=1&&value<=MAX_WORKERS?value:DEFAULT_WORKERS;
 const publicUser=u=>({id:u.id,email:u.email,phone:u.phone??null,label:u.label,active:u.active,expiresAt:u.expiresAt,maxSessions:u.maxSessions,rpmLimit:normalizeRpm(u.rpmLimit),workerLimit:normalizeWorkerLimit(u.workerLimit),keyId:u.keyId??null,accountType:u.accountType??'managed',trialStartedAt:u.trialStartedAt??null,trialEndsAt:u.trialEndsAt??null,createdAt:u.createdAt,updatedAt:u.updatedAt});
 const password=()=>randomBytes(24).toString('base64url');

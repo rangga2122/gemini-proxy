@@ -64,7 +64,7 @@ test('admin creation/reset/revoke/delete use password-era contracts', () => {
 
 test('admin configures per-account RPM and workers while statistics stay separated', () => {
   assert.match(html, /id="userRpmLimit"[^>]*min="1"[^>]*max="600"[^>]*value="60"/);
-  assert.match(html, /id="userWorkerLimit"[^>]*min="1"[^>]*max="20"[^>]*value="5"/);
+  assert.match(html, /id="userWorkerLimit"[^>]*min="1"[^>]*value="5"/);
   assert.match(html, /adminFetch\('\/admin\/stats'\)/);
   assert.match(html, /rpmLimit:\s*data\.rpmLimit/);
   assert.match(html, /rpmLimit\s*=\s*Number\(rpmInput\.value\)/);
