@@ -575,8 +575,8 @@ const server = http.createServer(async (req, res) => {
     }
   }
 
-  // ─── Video generation (Vibes via RupaAI session) ─────
-  // POST /v1/videos/generations  { prompt, imageBase64?/imageUrl?/imageEntId?, aspectRatio?, resolution?, variations? }
+  // ─── Video generation (multi-akun, round-robin session) ─────
+  // POST /v1/videos/generations  { prompt, imageBase64?/imageUrl?/imageEntId?, aspectRatio?, resolution?(480p|720p), variations? }
   if (path === '/v1/videos/generations' && method === 'POST') {
     try {
       const body = await readBody(req);
@@ -605,7 +605,7 @@ const server = http.createServer(async (req, res) => {
     }
   }
 
-  // GET /v1/videos/status — koneksi vibes session aktif atau tidak
+  // GET /v1/videos/status — jumlah akun video aktif
   if (path === '/v1/videos/status' && method === 'GET') {
     try {
       const status = await getVibesStatus();

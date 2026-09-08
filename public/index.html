@@ -437,7 +437,7 @@ html{color-scheme:dark}[hidden]{display:none!important}body{background:var(--voi
     </div>
   </div>
 
-  <!-- Generate Video (Vibes) -->
+  <!-- Generate Video -->
   <div class="card" id="cardVideo">
     <div class="card-head">
       <div class="card-icon video">
@@ -445,7 +445,7 @@ html{color-scheme:dark}[hidden]{display:none!important}body{background:var(--voi
       </div>
       <div class="card-title">
         <h3>GENERATE VIDEO</h3>
-        <p>Text/Image → Video (Vibes)</p>
+        <p><span id="videoAccountStatus">Memuat status akun…</span></p>
       </div>
     </div>
     <span class="card-endpoint">POST /v1/videos/generations</span>
@@ -476,8 +476,8 @@ html{color-scheme:dark}[hidden]{display:none!important}body{background:var(--voi
       <div class="field">
         <label>Resolusi</label>
         <select id="videoResolution">
-          <option value="720p">720p</option>
-          <option value="1080p">1080p</option>
+          <option value="480p">480p</option>
+          <option value="720p" selected>720p</option>
         </select>
       </div>
       <div class="field">
@@ -676,6 +676,7 @@ function navigateView(id, updateHash = true) {
   document.getElementById('currentViewTitle').textContent = DASH_VIEWS.find(v => v[0] === id)[1]; document.getElementById('moreTray').classList.remove('open');
   if (id === 'pengguna') { document.getElementById('adminArea').hidden = false; document.getElementById('adminToggle').setAttribute('aria-expanded','true'); }
   if (id === 'profil') loadProfile();
+  if (id === 'video') refreshVideoAccountStatus();
   if (updateHash) history.replaceState(null, '', '#' + id);
 }
 function buildNavigation() {
@@ -1204,8 +1205,17 @@ async function generateTTS() {
   }
 }
 
-// ─── Generate Video (Vibes) ──────────────
+// ─── Generate Video ──────────────────────
 let videoPollTimer=null;
+async function refreshVideoAccountStatus(){
+  const el=document.getElementById('videoAccountStatus');
+  try{
+    const r=await fetch(`${BASE}/dashboard/v1/videos/status`);
+    const d=await r.json();
+    const n=d.accounts||0, a=d.active??n;
+    el.textContent = d.connected ? (a===n?`Siap · ${n} akun aktif`:`${a} dari ${n} akun siap`) : 'Server video belum siap';
+  }catch{ el.textContent='Server video belum siap'; }
+}
 function clearVideoPoll(){if(videoPollTimer)clearInterval(videoPollTimer);videoPollTimer=null}
 async function generateVideo() {
   if (!requireApiKey()) return;
@@ -1264,7 +1274,7 @@ async function generateVideo() {
           document.getElementById('resultVideoBody').innerHTML = `<p class="user-meta">Generate berjalan… ${elapsed}s · ${done.length}/${contents.length} selesai, ${loading.length} diproses</p>`;
         }
       } catch { /* poll error diabaikan, lanjut */ }
-      if (elapsed > 600) { clearVideoPoll(); showError('resultVideo', 'Timeout menunggu video (10 menit). Batch tetap berjalan di vibes.ai.'); }
+      if (elapsed > 600) { clearVideoPoll(); showError('resultVideo', 'Timeout menunggu video (10 menit). Proses tetap berjalan di server.'); }
     };
     tick();
     videoPollTimer = setInterval(tick, 10000);
