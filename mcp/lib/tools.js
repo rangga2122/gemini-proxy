@@ -4,7 +4,7 @@ const imageSchema={oneOf:[{type:'string',description:'Image data URL'},{type:'ob
 const definitions=[
   {name:'chat_text',description:'Chat with text',properties:{prompt:{type:'string'}},required:['prompt']},
   {name:'analyze_image',description:'Analyze image',properties:{prompt:{type:'string'},image:imageSchema},required:['prompt','image']},
-  {name:'generate_image',description:'Generate image',properties:{prompt:{type:'string'},aspect_ratio:{type:'string'},image:imageSchema},required:['prompt']},
+  {name:'generate_image',description:'Generate image',properties:{prompt:{type:'string'},aspect_ratio:{type:'string'},image:imageSchema,extraImages:{type:'array',items:imageSchema}},required:['prompt']},
   {name:'edit_image',description:'Edit image',properties:{prompt:{type:'string'},image:imageSchema,aspect_ratio:{type:'string'}},required:['prompt','image']},
   {name:'generate_audio',description:'Generate audio',properties:{text:{type:'string'},voice:{type:'string'}},required:['text']},
   ...['list_voices','get_pool_status','get_service_status'].map(name=>({name,description:name.replaceAll('_',' '),properties:{},required:[]}))
@@ -25,7 +25,7 @@ export function createTools(client,store,{publicBaseUrl='',limits={}}={}){
     if(name==='analyze_image'){r=await sem.vision.run(()=>client.post('/v1/chat/completions',{prompt:a.prompt,referenceImage:a.image},{timeoutMs:45000}));return result(r.json?.choices?.[0]?.message?.content)}
     if(name==='generate_image'||name==='edit_image'){
       const path=name==='generate_image'?'/v1/images/generations':'/v1/images/variations';
-      r=await sem.image.run(()=>client.post(path,{prompt:a.prompt,...(a.image!==undefined?{image:a.image}:{}),...(a.aspect_ratio?{ratio:a.aspect_ratio}:{})},{timeoutMs:120000}));
+      r=await sem.image.run(()=>client.post(path,{prompt:a.prompt,...(a.image!==undefined?{image:a.image}:{}),...(Array.isArray(a.extraImages)&&a.extraImages.length?{extraImages:a.extraImages}:{}),...(a.aspect_ratio?{ratio:a.aspect_ratio}:{})},{timeoutMs:120000}));
       const item=r.json?.data?.[0]; const mime=item?.mimeType||r.json?.image?.mimeType||mimeFromDataUrl(item?.url)||'image/png';
       const base64=item?.b64_json||r.json?.image?.base64||base64FromDataUrl(item?.url); const art=await store.putBase64(base64,mime);return result(artifactUrl(publicBaseUrl,art.id));
     }
