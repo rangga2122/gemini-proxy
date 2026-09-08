@@ -468,6 +468,14 @@ html{color-scheme:dark}[hidden]{display:none!important}body{background:var(--voi
         <input class="input" type="file" id="videoImage" accept="image/*">
       </div>
       <div class="field">
+        <label>Rasio</label>
+        <select id="videoAspect">
+          <option value="auto" selected>Otomatis</option>
+          <option value="9:16">9:16 (potret)</option>
+          <option value="16:9">16:9 (lanskap)</option>
+        </select>
+      </div>
+      <div class="field">
         <label>Resolusi</label>
         <select id="videoResolution">
           <option value="480p">480p</option>
@@ -1229,6 +1237,7 @@ async function generateVideo() {
   const btn = document.getElementById('btnVideo');
   const body = {
     prompt,
+    aspectRatio: document.getElementById('videoAspect').value,
     resolution: document.getElementById('videoResolution').value,
     variations: Number(document.getElementById('videoVariations').value),
   };
