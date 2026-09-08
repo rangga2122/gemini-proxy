@@ -33,7 +33,8 @@ import { createKey, listKeys, revokeKey, activateKey, deleteKey,
 from './lib/apikeys.js';
 import { generateImage, generateImagesParallel, generateText, generateTTS, TTS_VOICES } from './lib/gemini.js';
 import { normalizeImageInput, ImageInputError } from './lib/images.js';
-import { generateVibesVideo, pollVibesBatch, getVibesStatus } from './lib/vibes.js';
+import { generateVibesVideo, pollVibesBatch, getVibesStatus, resetVibesCaches, listVibesAccounts, upsertVibesSession } from './lib/vibes.js';
+import crypto from 'node:crypto';
 
 const PORT = process.env.PORT || 3000;
 
@@ -370,6 +371,57 @@ const server = http.createServer(async (req, res) => {
       label: label,
       poolStats: getPoolStats(),
     });
+  }
+
+  // ─── Vibes Session Sync (dari Chrome Extension) ─────
+  // POST /v1/vibes/sync { session_value, projectId?, accountLabel?, valid? }
+  // Auth: header x-vibes-sync-token = VIBES_SYNC_TOKEN env (bukan API key user)
+  if (path === '/v1/vibes/sync' && (method === 'POST' || method === 'GET')) {
+    const token = String(req.headers['x-vibes-sync-token'] || '');
+    const expected = process.env.VIBES_SYNC_TOKEN || '';
+    if (!expected || token.length !== expected.length
+      || !crypto.timingSafeEqual(Buffer.from(token), Buffer.from(expected))) {
+      return sendJson(res, 401, { success: false, error: 'unauthorized' });
+    }
+    if (method === 'GET') {
+      try {
+        const status = await getVibesStatus();
+        return sendJson(res, 200, { success: true, ...status, timestamp: Date.now() });
+      } catch (error) {
+        return sendJson(res, 500, { success: false, error: error.message });
+      }
+    }
+    try {
+      const body = await readBody(req);
+      const sessions = Array.isArray(body.sessions) && body.sessions.length
+        ? body.sessions
+        : [{ session_value: body.session_value, accountKey: body.accountKey, captured_at: body.captured_at }];
+      let saved = 0;
+      for (const item of sessions) {
+        const sessionValue = String(item?.session_value || '').trim();
+        if (!sessionValue) continue;
+        // key stabil per akun = hash isi session (pola sama dengan RupaAI)
+        const accountKey = String(item?.accountKey || '').trim()
+          || crypto.createHash('sha256').update(sessionValue).digest('hex').slice(0, 24);
+        await upsertVibesSession({
+          key: accountKey,
+          session_value: sessionValue,
+          project_id: item?.projectId || body.projectId || null,
+          username: body.username || null,
+          account_status: body.account_status || null,
+          source: 'chrome-extension',
+          valid: typeof body.valid === 'boolean' ? body.valid : null,
+        });
+        saved++;
+        console.log(`[VibesSync] Session tersimpan (key=${accountKey.slice(0, 16)}) dari ${body.accountLabel || 'extension'}`);
+      }
+      if (!saved) return sendJson(res, 400, { success: false, error: 'session_value kosong' });
+      resetVibesCaches(); // cache akun basi → refresh di request berikutnya
+      return sendJson(res, 200, { success: true, saved, message: 'Session tersimpan' });
+    } catch (error) {
+      console.error('[VibesSync] error:', error.message);
+      return sendJson(res, 500, { success: false, error: error.message });
+    }
   }
 
   // ─── Semua endpoint di bawah butuh API key ──────────

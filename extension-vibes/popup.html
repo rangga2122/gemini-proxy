@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <style>
+    body { width: 320px; margin: 0; padding: 14px; font-family: system-ui, sans-serif; background: #0f172a; color: #e2e8f0; }
+    h2 { margin: 0 0 4px; font-size: 15px; color: #38bdf8; }
+    p.sub { margin: 0 0 12px; font-size: 11px; color: #94a3b8; }
+    label { display: block; font-size: 11px; margin: 10px 0 3px; color: #cbd5e1; }
+    input { width: 100%; box-sizing: border-box; padding: 7px 9px; border-radius: 7px; border: 1px solid #334155; background: #1e293b; color: #e2e8f0; font-size: 12px; }
+    button { width: 100%; margin-top: 12px; padding: 9px; border: 0; border-radius: 8px; background: #0ea5e9; color: white; font-weight: 600; font-size: 13px; cursor: pointer; }
+    button.secondary { background: #334155; margin-top: 8px; font-weight: 500; }
+    #status { margin-top: 10px; font-size: 11px; line-height: 1.5; min-height: 16px; }
+    .ok { color: #34d399; } .err { color: #f87171; }
+    .hint { font-size: 10px; color: #64748b; margin-top: 2px; }
+  </style>
+</head>
+<body>
+  <h2>Gen Console Video Sync</h2>
+  <p class="sub">Kirim session vibes.ai ke server video Gen Console</p>
+
+  <label>Token Sync</label>
+  <input type="password" id="syncToken" placeholder="vibes-sync-...">
+  <p class="hint">Minta token ke admin Gen Console.</p>
+
+  <label>Nama Akun (opsional)</label>
+  <input type="text" id="accountLabel" placeholder="deteksi otomatis jika kosong">
+  <p class="hint">Beri nama unik per akun, mis: akun-1, akun-2.</p>
+
+  <label>URL Server (lanjutan)</label>
+  <input type="text" id="syncUrl" placeholder="https://gen.azkazamdigital.com/v1/vibes/sync">
+
+  <button id="save">Simpan</button>
+  <button id="sync" class="secondary">Sync Sekarang</button>
+  <div id="status"></div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

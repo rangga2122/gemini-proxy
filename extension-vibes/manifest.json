@@ -1,0 +1,29 @@
+{
+  "manifest_version": 3,
+  "name": "Gen Console Video Sync",
+  "version": "1.0.0",
+  "description": "Auto-capture session video (vibes.ai) dan kirim ke Gen Console — support multi-akun",
+  "permissions": [
+    "storage",
+    "cookies",
+    "alarms"
+  ],
+  "host_permissions": [
+    "https://vibes.ai/*",
+    "https://*.vibes.ai/*",
+    "https://gen.azkazamdigital.com/*",
+    "http://localhost:3100/*",
+    "http://127.0.0.1:3100/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Gen Console Video Sync"
+  },
+  "icons": {
+    "48": "icon48.png",
+    "128": "icon128.png"
+  }
+}
