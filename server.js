@@ -33,6 +33,7 @@ import { createKey, listKeys, revokeKey, activateKey, deleteKey,
 from './lib/apikeys.js';
 import { generateImage, generateImagesParallel, generateText, generateTTS, TTS_VOICES } from './lib/gemini.js';
 import { normalizeImageInput, ImageInputError } from './lib/images.js';
+import { generateVibesVideo, pollVibesBatch, getVibesStatus } from './lib/vibes.js';
 
 const PORT = process.env.PORT || 3000;
 
@@ -570,6 +571,46 @@ const server = http.createServer(async (req, res) => {
       } else if (cfg._accountId) {
         markError(cfg._accountId, error.message);
       }
+      return sendJson(res, 500, { error: error.message });
+    }
+  }
+
+  // ─── Video generation (Vibes via RupaAI session) ─────
+  // POST /v1/videos/generations  { prompt, imageBase64?/imageUrl?/imageEntId?, aspectRatio?, resolution?, variations? }
+  if (path === '/v1/videos/generations' && method === 'POST') {
+    try {
+      const body = await readBody(req);
+      const result = await generateVibesVideo(body);
+      return sendJson(res, 200, result);
+    } catch (error) {
+      console.error('[Vibes] generations error:', error.message, '| status:', error.status);
+      return sendJson(res, error.status && error.status >= 400 && error.status < 600 ? error.status : 500, { error: error.message });
+    }
+  }
+
+  // GET /v1/videos/batch/:id (atau /v1/videos/batch?batchId=) — poll status batch video
+  if ((path.startsWith('/v1/videos/batch/') || path === '/v1/videos/batch') && method === 'GET') {
+    try {
+      let batchId = decodeURIComponent(path.split('/')[4] || '');
+      if (!batchId) {
+        const q = new URL(req.url, 'http://localhost').searchParams;
+        batchId = q.get('batchId') || '';
+      }
+      if (!batchId) return sendJson(res, 400, { error: 'batchId wajib' });
+      const batch = await pollVibesBatch(batchId);
+      return sendJson(res, 200, { success: true, batch });
+    } catch (error) {
+      console.error('[Vibes] batch poll error:', error.message);
+      return sendJson(res, error.status && error.status >= 400 && error.status < 600 ? error.status : 500, { error: error.message });
+    }
+  }
+
+  // GET /v1/videos/status — koneksi vibes session aktif atau tidak
+  if (path === '/v1/videos/status' && method === 'GET') {
+    try {
+      const status = await getVibesStatus();
+      return sendJson(res, 200, { status: 'online', ...status, timestamp: Date.now() });
+    } catch (error) {
       return sendJson(res, 500, { error: error.message });
     }
   }

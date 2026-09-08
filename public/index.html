@@ -437,6 +437,66 @@ html{color-scheme:dark}[hidden]{display:none!important}body{background:var(--voi
     </div>
   </div>
 
+  <!-- Generate Video (Vibes) -->
+  <div class="card" id="cardVideo">
+    <div class="card-head">
+      <div class="card-icon video">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
+      </div>
+      <div class="card-title">
+        <h3>GENERATE VIDEO</h3>
+        <p>Text/Image → Video (Vibes)</p>
+      </div>
+    </div>
+    <span class="card-endpoint">POST /v1/videos/generations</span>
+    <div class="card-body">
+      <div class="field">
+        <label>Mode</label>
+        <select id="videoMode" onchange="document.getElementById('videoImageWrap').hidden=this.value!=='i2v'">
+          <option value="t2v">Teks → Video</option>
+          <option value="i2v">Gambar → Video</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Prompt</label>
+        <textarea class="textarea" id="videoPrompt" placeholder="Deskripsikan video yang diinginkan, mis: kucing oren berlari di pantai saat matahari terbenam" style="min-height:80px"></textarea>
+      </div>
+      <div class="field" id="videoImageWrap" hidden>
+        <label>Gambar awal (frame pertama)</label>
+        <input class="input" type="file" id="videoImage" accept="image/*">
+      </div>
+      <div class="field">
+        <label>Aspect ratio</label>
+        <select id="videoAspect">
+          <option value="9:16">9:16 (potret)</option>
+          <option value="16:9">16:9 (lanskap)</option>
+          <option value="1:1">1:1 (kotak)</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Resolusi</label>
+        <select id="videoResolution">
+          <option value="720p">720p</option>
+          <option value="1080p">1080p</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Jumlah variasi</label>
+        <select id="videoVariations">
+          <option value="1">1 video</option>
+          <option value="2" selected>2 video</option>
+        </select>
+      </div>
+      <button class="btn" id="btnVideo" onclick="generateVideo()">
+        <span>Generate video</span>
+      </button>
+    </div>
+    <div class="result" id="resultVideo">
+      <div class="result-header"><span>Video Result</span></div>
+      <div class="result-body" id="resultVideoBody"></div>
+    </div>
+  </div>
+
 </div>
 
 <section class="mcp-panel" id="profileView" hidden aria-labelledby="profileTitle">
@@ -597,7 +657,7 @@ response = client.chat.completions.create(
 const BASE = window.location.origin;
 const modelHighlight=document.createElement('div');modelHighlight.className='model-highlight';modelHighlight.setAttribute('aria-label','Model generate gambar Nano Banana terbaru');modelHighlight.append('MODEL GENERATE GAMBAR · ');const modelName=document.createElement('strong');modelName.textContent='NANO BANANA TERBARU';modelHighlight.append(modelName);document.querySelector('.landing-actions')?.after(modelHighlight);
 const DASH_VIEWS = [
-  ['ringkasan','Ringkasan','card-ringkasan'],['gambar','Gambar','cardImage'],['analisis','Analisis','cardVision'],['chat','Chat','cardChat'],['audio','Audio','cardTTS'],['mcp','MCP','mcp'],['profil','Profil','profileView'],['pengguna','Pengguna','adminMcp'],['dokumentasi','Dokumentasi','docs']
+  ['ringkasan','Ringkasan','card-ringkasan'],['gambar','Gambar','cardImage'],['video','Video','cardVideo'],['analisis','Analisis','cardVision'],['chat','Chat','cardChat'],['audio','Audio','cardTTS'],['mcp','MCP','mcp'],['profil','Profil','profileView'],['pengguna','Pengguna','adminMcp'],['dokumentasi','Dokumentasi','docs']
 ];
 const navIcon = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M8 9h8M8 13h8M8 17h5"/></svg>';
 function navigateView(id, updateHash = true) {
@@ -610,7 +670,7 @@ function navigateView(id, updateHash = true) {
   document.getElementById('mcpContent').hidden = id === 'pengguna';
   document.getElementById('adminMcp').hidden = id !== 'pengguna' || authSession?.role !== 'admin';
   document.getElementById('profileView').hidden = id !== 'profil';
-  const targets = {gambar:'cardImage',analisis:'cardVision',chat:'cardChat',audio:'cardTTS',mcp:'mcpTitle',profil:'profileView',pengguna:'adminMcp',dokumentasi:'codeCurl'};
+  const targets = {gambar:'cardImage',video:'cardVideo',analisis:'cardVision',chat:'cardChat',audio:'cardTTS',mcp:'mcpTitle',profil:'profileView',pengguna:'adminMcp',dokumentasi:'codeCurl'};
   const target = targets[id] && document.getElementById(targets[id]); if (target) (target.closest('.card,.mcp-panel,.code-section') || target).classList.add('view-active');
   document.querySelectorAll('[data-view]').forEach(b => { const active=b.dataset.view === id; b.classList.toggle('active', active); if(active) b.setAttribute('aria-current','page'); else b.removeAttribute('aria-current'); });
   document.getElementById('currentViewTitle').textContent = DASH_VIEWS.find(v => v[0] === id)[1]; document.getElementById('moreTray').classList.remove('open');
@@ -1139,6 +1199,78 @@ async function generateTTS() {
     const audio = document.createElement('audio'); audio.controls = true; audio.autoplay = true; audio.src = data.audio.dataUrl; document.getElementById('resultTTSBody').replaceChildren(audio);
   } catch (e) {
     showError('resultTTS', e.message);
+  } finally {
+    setLoading(btn, false);
+  }
+}
+
+// ─── Generate Video (Vibes) ──────────────
+let videoPollTimer=null;
+function clearVideoPoll(){if(videoPollTimer)clearInterval(videoPollTimer);videoPollTimer=null}
+async function generateVideo() {
+  if (!requireApiKey()) return;
+  const prompt = document.getElementById('videoPrompt').value.trim();
+  if (!prompt) return showToast('Prompt wajib diisi');
+  const mode = document.getElementById('videoMode').value;
+  const btn = document.getElementById('btnVideo');
+  const body = {
+    prompt,
+    aspectRatio: document.getElementById('videoAspect').value,
+    resolution: document.getElementById('videoResolution').value,
+    variations: Number(document.getElementById('videoVariations').value),
+  };
+  if (mode === 'i2v') {
+    const file = document.getElementById('videoImage').files?.[0];
+    if (!file) return showToast('Pilih gambar awal dulu');
+    body.imageBase64 = await new Promise((resolve) => { const fr = new FileReader(); fr.onload = () => resolve(String(fr.result).split(',')[1]); fr.readAsDataURL(file); });
+    body.imageMimeType = file.type || 'image/jpeg';
+  }
+  setLoading(btn, true);
+  clearVideoPoll();
+  showResult('resultVideo');
+  document.getElementById('resultVideoBody').innerHTML = '<p class="user-meta">Membuat batch video…</p>';
+  try {
+    const r = await fetch(`${BASE}/dashboard/v1/videos/generations`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error || 'Request failed');
+    const batchId = data.batchId;
+    if (!batchId) throw new Error('batchId tidak diterima dari server');
+    let elapsed = 0;
+    const tick = async () => {
+      elapsed += 10;
+      try {
+        const pr = await fetch(`${BASE}/dashboard/v1/videos/batch?batchId=${encodeURIComponent(batchId)}`);
+        const pd = await pr.json();
+        if (pr.ok && pd.batch) {
+          const contents = (pd.batch.content || []);
+          const done = contents.filter(c => c.videoUrl || (String(c.type||'').includes('video') && c.url));
+          const loading = contents.filter(c => c.isLoading);
+          if (done.length) {
+            clearVideoPoll();
+            const wrap = document.createElement('div');
+            done.forEach(c => {
+              const url = c.videoUrl || c.url;
+              const v = document.createElement('video'); v.controls = true; v.src = url; v.style.maxWidth = '100%'; v.style.marginBottom = '10px';
+              wrap.append(v);
+            });
+            document.getElementById('resultVideoBody').replaceChildren(wrap);
+            showToast(`Video selesai (${done.length})`);
+            return;
+          }
+          document.getElementById('resultVideoBody').innerHTML = `<p class="user-meta">Generate berjalan… ${elapsed}s · ${done.length}/${contents.length} selesai, ${loading.length} diproses</p>`;
+        }
+      } catch { /* poll error diabaikan, lanjut */ }
+      if (elapsed > 600) { clearVideoPoll(); showError('resultVideo', 'Timeout menunggu video (10 menit). Batch tetap berjalan di vibes.ai.'); }
+    };
+    tick();
+    videoPollTimer = setInterval(tick, 10000);
+  } catch (e) {
+    clearVideoPoll();
+    showError('resultVideo', e.message);
   } finally {
     setLoading(btn, false);
   }

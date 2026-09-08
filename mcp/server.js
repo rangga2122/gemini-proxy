@@ -74,6 +74,9 @@ const DASHBOARD_ROUTES=new Map([
   ['POST /dashboard/v1/images/variations','/v1/images/variations'],
   ['POST /dashboard/v1/chat/completions','/v1/chat/completions'],
   ['POST /dashboard/v1/audio/speech','/v1/audio/speech'],
+  ['POST /dashboard/v1/videos/generations','/v1/videos/generations'],
+  ['GET /dashboard/v1/videos/batch','/v1/videos/batch'],
+  ['GET /dashboard/v1/videos/status','/v1/videos/status'],
   ['GET /dashboard/v1/tts/voices','/v1/tts/voices'],
   ['GET /dashboard/v1/status','/v1/status']
 ]);
@@ -84,7 +87,7 @@ async function handleDashboard(req,res,url,{dashboard,users,gen,usage,rate,singl
   const actor=session.role==='user'?`user:${session.user.id}`:'admin',user=session.role==='user'?users.get(session.user.id):null,rpm=user?(user.rpmLimit??DEFAULT_RPM):null,workers=normalizeWorkerLimit(user?.workerLimit);
   let release=null;if(req.method==='POST'&&session.role==='user'){const rl=rate.take(actor,rpm);res.setHeader('x-ratelimit-limit',String(rpm));res.setHeader('x-ratelimit-remaining',String(Math.max(0,rl.remaining??0)));if(!rl.ok){res.setHeader('retry-after',String(Math.ceil(rl.retryAfterMs/1000)));return json(res,429,{error:'rate limit',rpmLimit:rpm})}release=singleFlight.acquire(actor,workers);if(!release){res.setHeader('retry-after','1');return json(res,429,{error:`Maximum ${workers} active API requests are allowed per account`,workerLimit:workers})}}
   let value; if(req.method==='POST'){try{value=JSON.parse(await body(req,MAX))}catch{release?.();return json(res,400,{error:'Invalid request'})}}
-  try{const result=await gen.request(path,{method:req.method,body:value}),feature=dashboardFeature(path,value);if(feature)await usage.record(actor,feature).catch(()=>{});if(result.json!==undefined)return json(res,200,result.json);res.writeHead(200,{'content-type':result.mime});return res.end(result.data)}catch{return json(res,502,{error:'Backend unavailable'})}finally{release?.()}
+  try{const target=path+((req.method==='GET'&&url.search)?url.search:'');const timeoutMs=path.startsWith('/v1/videos')?300000:undefined;const result=await gen.request(target,{method:req.method,body:value,timeoutMs}),feature=dashboardFeature(path,value);if(feature)await usage.record(actor,feature).catch(()=>{});if(result.json!==undefined)return json(res,200,result.json);res.writeHead(200,{'content-type':result.mime});return res.end(result.data)}catch{return json(res,502,{error:'Backend unavailable'})}finally{release?.()}
 }
 
 async function handleAuth(req,res,url,c){
@@ -194,7 +197,7 @@ export function clientIp(req,trustProxy=false){
 function normalizeIp(value){if(typeof value!=='string')return null;const mapped=value.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/i);if(mapped&&net.isIP(mapped[1])===4)return mapped[1];return net.isIP(value)?value.toLowerCase():null}
 function isTrustedPeer(ip){const family=net.isIP(ip);if(family===4){const n=ip.split('.').map(Number);return n[0]===10||n[0]===127||n[0]===169&&n[1]===254||n[0]===172&&n[1]>=16&&n[1]<=31||n[0]===192&&n[1]===168}if(family===6)return ip==='::1'||ip.startsWith('fc')||ip.startsWith('fd')||/^fe[89ab]/.test(ip);return false}
 function mcpFeature(query){if(query?.method!=='tools/call')return null;return {generate_image:'imageGenerate',edit_image:'imageEdit',analyze_image:'vision',chat_text:'chat',generate_audio:'audio'}[query.params?.name]||null}
-function dashboardFeature(path,value){if(path==='/v1/images/generations')return'imageGenerate';if(path==='/v1/images/variations')return'imageEdit';if(path==='/v1/audio/speech')return'audio';if(path==='/v1/chat/completions')return value?.referenceImage||value?.image?'vision':'chat';return null}
+function dashboardFeature(path,value){if(path==='/v1/images/generations')return'imageGenerate';if(path==='/v1/images/variations')return'imageEdit';if(path==='/v1/videos/generations')return'videoGenerate';if(path==='/v1/audio/speech')return'audio';if(path==='/v1/chat/completions')return value?.referenceImage||value?.image?'vision':'chat';return null}
 function security(res){res.setHeader('x-content-type-options','nosniff');res.setHeader('referrer-policy','no-referrer');res.setHeader('x-frame-options','DENY');res.setHeader('content-security-policy',"default-src 'none'; frame-ancestors 'none'");res.setHeader('cache-control','no-store')}
 function extension(mime){return {'image/png':'png','image/jpeg':'jpg','image/webp':'webp','audio/mpeg':'mp3','audio/wav':'wav','audio/ogg':'ogg'}[mime]||'bin'}
 if(process.argv[1]===fileURLToPath(import.meta.url)){const app=await createApp(),port=Number(process.env.PORT||3101);app.server.listen(port,process.env.HOST||'127.0.0.1');const stop=async()=>{await app.close();process.exit(0)};process.on('SIGTERM',stop);process.on('SIGINT',stop)}
