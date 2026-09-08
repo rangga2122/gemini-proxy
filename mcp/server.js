@@ -157,6 +157,14 @@ async function handleAdmin(req,res,url,c){
   if(req.method==='POST'&&url.pathname==='/admin/logout'){await c.admin.logout(token);res.writeHead(204);return res.end()}
   if(req.method==='GET'&&url.pathname==='/admin/users')return json(res,200,{users:c.users.list()});
   if(req.method==='GET'&&url.pathname==='/admin/stats')return json(res,200,await c.usage.report(c.users.list()));
+  if(req.method==='GET'&&url.pathname==='/admin/vibes-extension'){
+    try{
+      const zipPath=process.env.VIBES_EXT_ZIP||join(process.cwd(),'..','extension-vibes.zip');
+      const data=await readFile(zipPath);
+      res.writeHead(200,{'content-type':'application/zip','content-disposition':'attachment; filename="gen-console-video-sync-extension.zip"','content-length':String(data.length)});
+      return res.end(data);
+    }catch{return json(res,404,{error:'Extension package not found'})}
+  }
   if(req.method==='POST'&&url.pathname==='/admin/users'){
     const value=req.parsedBody;if(!validUserInput(value))return json(res,400,{error:'Invalid request'});
     const result=await c.users.upsert(value);return json(res,result.created?201:200,{user:publicUser(result.user),...(result.password?{password:result.password}:{})});

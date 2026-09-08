@@ -445,7 +445,9 @@ html{color-scheme:dark}[hidden]{display:none!important}body{background:var(--voi
       </div>
       <div class="card-title">
         <h3>GENERATE VIDEO</h3>
-        <p><span id="videoAccountStatus">Memuat status akun…</span></p>
+        <p><span id="videoAccountStatus">Memuat status akun…</span>
+          <button class="btn secondary" id="btnVibesExtDl" type="button" hidden style="display:none;margin-left:8px;padding:2px 10px;font-size:11px" onclick="window.open('/admin/vibes-extension','_blank')"><span>Download Ekstensi</span></button>
+        </p>
       </div>
     </div>
     <span class="card-endpoint">POST /v1/videos/generations</span>
@@ -669,6 +671,7 @@ function navigateView(id, updateHash = true) {
   if (id === 'pengguna') { document.getElementById('adminArea').hidden = false; document.getElementById('adminToggle').setAttribute('aria-expanded','true'); }
   if (id === 'profil') loadProfile();
   if (id === 'video') refreshVideoAccountStatus();
+  syncVibesExtButton();
   if (updateHash) history.replaceState(null, '', '#' + id);
 }
 function buildNavigation() {
@@ -705,6 +708,7 @@ function startTrialStatus(session){clearTrialActiveTimer();const user=session.us
 function showDashboard(session, credential='') {
   clearTrialState(); clearPublicOrderPoll(); document.body.style.overflow=''; authSession=session; setApiKey(); startTrialStatus(session);
   document.getElementById('accountEmail').textContent=session.user?.email||''; document.getElementById('accountRole').textContent=session.role;
+  syncVibesExtButton();
   document.getElementById('keyNotice').classList.remove('show');
   document.querySelector('.simple-key').hidden=session.role==='admin'; document.getElementById('userOnlineStatus').hidden=session.role==='admin';
   showAuthScreen('dashboard'); buildNavigation(); if(session.entitlement==='profile-only')navigateView('profil'); init(); if(session.role==='admin'){setAdminState(true); loadUsers().catch(e=>adminMessage(e.message));}
@@ -1199,6 +1203,14 @@ async function generateTTS() {
 
 // ─── Generate Video ──────────────────────
 let videoPollTimer=null;
+// Tombol download ekstensi video: hanya untuk admin (role dari sesi server)
+function syncVibesExtButton(){
+  const btn=document.getElementById('btnVibesExtDl');
+  if(!btn) return;
+  const isAdmin=authSession?.role==='admin';
+  btn.hidden=!isAdmin;
+  btn.style.display=isAdmin?'':'none';
+}
 async function refreshVideoAccountStatus(){
   const el=document.getElementById('videoAccountStatus');
   try{
