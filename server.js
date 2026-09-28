@@ -499,7 +499,15 @@ const server = http.createServer(async (req, res) => {
     return sendJson(res, 401, { error: 'Invalid or missing API key. Use Authorization: Bearer or X-API-Key header. Generate key at /api/keys (POST)' });
   }
 
-  if (!hasTokens()) {
+  // Gerbang kolam token Gemini — HANYA untuk endpoint yang benar-benar memakai
+  // kolam itu (generate gambar/teks Gemini).
+  // ⚠️ BUG 28 Sep'26: dulu gerbang ini TANPA syarat, jadi begitu token-pool.json
+  // rusak/kosong SEMUA endpoint di bawah balas 503 "Gemini tokens not configured"
+  // — termasuk /api/omni-accounts (halaman /kelola-akun jadi tampak "tidak ada
+  // data") dan /v1/images/gpt/accounts. Endpoint admin/status akun tidak butuh
+  // token Gemini sama sekali, jadi jangan ikut diblokir.
+  const bukanGateGemini = /^\/(api\/(omni-accounts|omni-autologin)|v1\/images\/gpt)/.test(path);
+  if (!bukanGateGemini && !hasTokens()) {
     return sendJson(res, 503, {
       error: 'Gemini tokens not configured. Capture tokens first via Chrome extension (POST /v1/capture-tokens) or set in .env',
     });

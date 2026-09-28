@@ -11,6 +11,25 @@ const AUTOMATION_DIR = '/home/ubuntu/.9router/automation-runtime';
 const POOL_FILE = '/home/ubuntu/work/gemini-proxy/token-pool.json';
 const SCREENSHOT_DIR = '/home/ubuntu/google-profiles/screenshots';
 
+// ⚠️ 28 Sep'26: akar kejadian pool 0 byte = disk penuh 11:31 (No space left on
+// device) memotong file JSON saat ditulis. Tulis pool sekarang atomik, TAPI
+// lebih baik dicegah: kalau sisa disk < 200 MB, JANGAN tulis sama sekali
+// (lebih baik refresh ditunda daripada merusak pool untuk semua akun).
+function assertDiskSpace() {
+  const { execSync } = require('child_process');
+  try {
+    const kb = parseInt(execSync("df -Pk /home/ubuntu | tail -1 | awk '{print $4}'", { encoding: 'utf8' }).trim(), 10);
+    const mb = Math.round(kb / 1024);
+    if (kb < 200 * 1024) {
+      throw new Error(`Sisa disk hanya ${mb} MB (<200 MB) — menolak menulis pool agar tidak terpotong. Bebaskan disk dulu.`);
+    }
+    return mb;
+  } catch (e) {
+    if (/Sisa disk/.test(e.message)) throw e;
+    return null;
+  }
+}
+
 const GEN_PROXY_URL = process.env.GEN_PROXY_URL || 'http://localhost:3100';
 const GEN_EXTENSION_KEY = process.env.GEN_EXTENSION_KEY || '';
 const ACCOUNT_LABEL = process.env.ACCOUNT_LABEL || '';
@@ -27,23 +46,80 @@ const COOKIE_NAMES = [
 ];
 
 // ===== Read cookies from pool =====
+// ⚠️ 28 Sep'26 — DIPERKUAT. Dulu fungsi ini langsung `throw` kalau file pool
+// kosong/rusak atau label tidak ada. Akibatnya SEMUA cron refresh mati
+// (19 job × error "Unexpected end of JSON input") dan pool tidak pernah sembuh
+// sendiri — lingkaran setan, karena refresh butuh cookies DARI pool.
+// Sekarang: (1) file kosong/rusak → pulihkan dari backup terbaru, (2) label
+// tidak ada → pakai cookies dari profil browser akun itu (kalau masih login),
+// baru menyerah dengan pesan jelas.
+function latestPoolBackup() {
+  const dir = path.dirname(POOL_FILE);
+  const base = path.basename(POOL_FILE);
+  try {
+    const cands = fs.readdirSync(dir)
+      .filter(f => f.startsWith(base + '.backup') || f.startsWith(base + '.bak'))
+      .map(f => path.join(dir, f))
+      .sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs);
+    return cands[0] || null;
+  } catch { return null; }
+}
+
+function readPoolSafe() {
+  try {
+    const raw = fs.readFileSync(POOL_FILE, 'utf8');
+    if (!raw.trim()) throw new Error('pool kosong');
+    const pool = JSON.parse(raw);
+    if (!Array.isArray(pool.accounts)) throw new Error('pool tanpa accounts');
+    return pool;
+  } catch (e) {
+    const bak = latestPoolBackup();
+    if (!bak) throw new Error(`pool rusak/kosong dan tidak ada backup: ${e.message}`);
+    console.log(`⚠️  Pool rusak/kosong (${e.message}) → memakai backup ${path.basename(bak)}`);
+    return JSON.parse(fs.readFileSync(bak, 'utf8'));
+  }
+}
+
+// Cookies dari profil browser akun (dipakai kalau pool tidak punya entry-nya).
+// Pool Omni (omni-accounts) HIDUP sebagai akun Google — dipakai sebagai cadangan.
+function cookiesFromProfiles(label) {
+  const roots = ['/home/ubuntu/google-profiles', '/home/ubuntu/omni-accounts/profiles'];
+  const out = {};
+  for (const root of roots) {
+    for (const cand of [label, label.toLowerCase()]) {
+      const p = path.join(root, cand, 'cookies.sqlite');
+      if (fs.existsSync(p)) {
+        try {
+          const { execFileSync } = require('child_process');
+          const rows = execFileSync('sqlite3', ['-separator', '\t', p,
+            "SELECT name,value FROM moz_cookies WHERE host LIKE '%google.com'"], { encoding: 'utf8' });
+          const map = {};
+          for (const line of rows.split('\n')) {
+            const [n, ...r] = line.split('\t');
+            if (n && r.length) map[n] = r.join('\t');
+          }
+          if (Object.keys(map).length > 3) return map;
+        } catch {}
+      }
+    }
+  }
+  return out;
+}
+
 function getCookiesFromPool(label) {
-  if (!fs.existsSync(POOL_FILE)) {
-    throw new Error(`Pool file not found: ${POOL_FILE}`);
+  const pool = readPoolSafe();
+  const account = pool.accounts.find(a => a.label === label) || { label };
+  const cookieStr = account.cookies
+    || Object.entries(cookiesFromProfiles(label)).map(([n, v]) => `${n}=${v}`).join('; ');
+  if (!cookieStr) {
+    throw new Error(`Account "${label}" tidak punya cookies di pool maupun di profil browser`);
   }
-  const pool = JSON.parse(fs.readFileSync(POOL_FILE, 'utf8'));
-  const account = pool.accounts.find(a => a.label === label);
-  if (!account) {
-    throw new Error(`Account "${label}" not found in pool`);
-  }
-  if (!account.cookies) {
-    throw new Error(`Account "${label}" has no cookies in pool`);
-  }
-  
+
   // Parse cookie string "SID=xxx; SAPISID=yyy; ..." into array
   const cookies = [];
-  for (const part of account.cookies.split('; ')) {
-    const [name, ...rest] = part.split('=');
+  for (const part of cookieStr.split(';')) {
+    const [rawName, ...rest] = part.trim().split('=');
+    const name = (rawName || '').trim();
     const value = rest.join('=');
     if (value && COOKIE_NAMES.includes(name)) {
       cookies.push({
@@ -57,7 +133,7 @@ function getCookiesFromPool(label) {
       });
     }
   }
-  return { cookies, account };
+  return { cookies, account: { ...account, cookies: cookieStr } };
 }
 
 // ===== Token extraction =====

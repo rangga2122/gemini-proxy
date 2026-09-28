@@ -28,6 +28,7 @@ Thumbs.db
 # Backup berkas rahasia (token pool) — jangan pernah di-push
 *.backup-*
 token-pool.json.*
+pool-archive/
 api-keys.json.*
 .env.*.backup*
 
