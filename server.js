@@ -33,7 +33,14 @@ import { createKey, listKeys, revokeKey, activateKey, deleteKey,
 from './lib/apikeys.js';
 import { generateImage, generateImagesParallel, generateText, generateTTS, TTS_VOICES } from './lib/gemini.js';
 import { normalizeImageInput, ImageInputError } from './lib/images.js';
-import { generateVibesVideo, pollVibesBatch, getVibesStatus, resetVibesCaches, listVibesAccounts, upsertVibesSession } from './lib/vibes.js';
+import { generateImage as generateGptImage, loadLeonardoPool, poolSummary,
+         listFreshSessions, getUserTokens, withLeonardoSession, LeonardoError, snapSize,
+         generateVideo as generateLeoVideo, videoDimensions, LEO_VIDEO_MODEL,
+         LEO_VIDEO_RESOLUTIONS, LEO_VIDEO_QUALITIES, LEO_VIDEO_DURATIONS }
+from './lib/leonardo.js';
+import { getVibesStatus, resetVibesCaches, upsertVibesSession } from './lib/vibes.js';
+import { listPool as omniListPool, totalAccounts as omniTotal, getActive as omniGetActive, setActive as omniSetActive, stats as omniStats, setMode as omniSetMode } from './lib/omni-accounts.js';
+import { spawn } from 'node:child_process';
 import crypto from 'node:crypto';
 
 const PORT = process.env.PORT || 3000;
@@ -53,6 +60,8 @@ const MIME_TYPES = {
 };
 
 function serveStatic(req, res, urlPath) {
+  // Alias rapi: /kelola-akun → kelola-akun.html
+  if (urlPath === '/kelola-akun') urlPath = '/kelola-akun.html';
   let filePath = path.join(PUBLIC_DIR, urlPath === '/' ? 'index.html' : urlPath);
   // Security: prevent path traversal
   filePath = filePath.replace(/\.\./g, '');
@@ -78,7 +87,25 @@ function authCheck(req) {
   const auth = req.headers['authorization'] || '';
   const xkey = req.headers['x-api-key'] || '';
   const bearer = auth.replace(/^Bearer\s+/i, '');
-  return validateKey(bearer) || validateKey(xkey);
+  if (validateKey(bearer) || validateKey(xkey)) return true;
+  // Fallback: dashboard_session dari login Gen Console (role admin) — utk endpoint admin omni-accounts
+  try {
+    const cookies = (req.headers.cookie || '').split(';').map(s => s.trim());
+    const sess = cookies.find(c => c.startsWith('dashboard_session='));
+    if (sess) {
+      const token = sess.slice('dashboard_session='.length);
+      const stateDir = process.env.MCP_STATE_DIR || '/home/ubuntu/work/gemini-proxy/mcp-state';
+      const now = Date.now();
+      for (const file of ['admin-sessions.json', 'dashboard-sessions.json']) {
+        try {
+          const sessions = JSON.parse(fs.readFileSync(stateDir + '/' + file, 'utf8'));
+          const found = sessions.find(s => s.hash === crypto.createHash('sha256').update(token).digest('hex') && s.expiresAt > now);
+          if (found && (file === 'admin-sessions.json' || found.role === 'admin')) return true;
+        } catch {}
+      }
+    }
+  } catch {}
+  return false;
 }
 
 function sendJson(res, status, data) {
@@ -424,6 +451,49 @@ const server = http.createServer(async (req, res) => {
     }
   }
 
+  // ─── Pool JWT Leonardo: hub leonardo.azkazamdigital.com → Gen Console ───
+  // POST /v1/leonardo/pool — hub push pool JWT (auth: Bearer master API_KEY).
+  // Disimpan ke mcp-state/leonardo-pool.json sebagai sumber baca + fallback.
+  if (path === '/v1/leonardo/pool' && method === 'POST') {
+    if (!validateKey((req.headers['authorization'] || '').replace(/^Bearer\s+/i, '') || req.headers['x-api-key'] || '')) {
+      return sendJson(res, 401, { error: 'Invalid API key' });
+    }
+    try {
+      const body = await readBody(req);
+      const incoming = Array.isArray(body) ? body : (body.sessions || []);
+      if (!Array.isArray(incoming) || !incoming.length) return sendJson(res, 400, { error: 'sessions kosong' });
+
+      const stateDir = process.env.MCP_STATE_DIR || '/home/ubuntu/work/gemini-proxy/mcp-state';
+      const poolFile = stateDir + '/leonardo-pool.json';
+      let current = { sessions: [], cursor: 0 };
+      try { current = JSON.parse(fs.readFileSync(poolFile, 'utf8')); } catch { current = { sessions: [], cursor: 0 }; }
+
+      const sessions = Array.isArray(current.sessions) ? [...current.sessions] : [];
+      const idx = new Map(sessions.map((s, i) => [s.email || s.userSub, i]));
+      let added = 0; let updated = 0;
+      for (const inc of incoming) {
+        const k = inc.email || inc.userSub;
+        if (k && idx.has(k)) {
+          const prev = sessions[idx.get(k)];
+          sessions[idx.get(k)] = { ...prev, ...inc, lastUsedAt: prev.lastUsedAt || null };
+          updated++;
+        } else { sessions.push(inc); added++; }
+      }
+      const merged = { updatedAt: Date.now(), cursor: Number(body.cursor ?? current.cursor) || 0, sessions };
+      // tulis atomik: file sementara lalu rename (hindari pool setengah jadi)
+      fs.writeFileSync(poolFile + '.tmp', JSON.stringify(merged, null, 1));
+      fs.renameSync(poolFile + '.tmp', poolFile);
+
+      const nowSec = Date.now() / 1000;
+      const freshCount = sessions.filter((s) => s.accessToken && !s.invalid && Number(s.tokenExp) > nowSec + 120).length;
+      console.log(`[LeonardoPool] push dari ${body.source || 'hub'}: +${added} baru, ${updated} update, ${freshCount}/${sessions.length} fresh`);
+      return sendJson(res, 200, { success: true, total: sessions.length, added, updated, fresh: freshCount });
+    } catch (error) {
+      console.error('[LeonardoPool] error:', error.message);
+      return sendJson(res, 500, { error: error.message });
+    }
+  }
+
   // ─── Semua endpoint di bawah butuh API key ──────────
   if (!authCheck(req)) {
     return sendJson(res, 401, { error: 'Invalid or missing API key. Use Authorization: Bearer or X-API-Key header. Generate key at /api/keys (POST)' });
@@ -511,6 +581,128 @@ const server = http.createServer(async (req, res) => {
       console.error('[Parallel] Error:', error.message);
       if (error instanceof ImageInputError) return sendJson(res, 400, { error: error.message });
       return sendJson(res, 500, { error: error.message });
+    }
+  }
+
+  // ─── GPT Image (Leonardo pool) ───────────────────────
+  // POST /v1/images/gpt
+  // Body: { prompt, model?, width?, height?, ratio?, size?, quantity?, quality?, promptEnhance?, image? }
+  if (path === '/v1/images/gpt' && method === 'POST') {
+    try {
+      const body = await readBody(req);
+      if (!body.prompt) return sendJson(res, 400, { error: 'prompt is required' });
+
+      const RATIOS = { '9:16': { w: 768, h: 1376 }, '16:9': { w: 1376, h: 768 } };
+      const SIZES = { SMALL: 1, MEDIUM: 1.48, LARGE: 2.63 };
+      const ar = RATIOS[body.ratio] || RATIOS['9:16'];
+      const scale = SIZES[String(body.size || 'SMALL').toUpperCase()] || 1;
+      // Rumus skala menghasilkan angka mentah (2036x1137) yang DITOLAK Leonardo.
+      // Selalu snap ke bank dimensi resmi supaya MEDIUM/LARGE tidak error.
+      const snapped = snapSize({
+        width: body.width || Math.round(ar.w * scale),
+        height: body.height || Math.round(ar.h * scale),
+      });
+      const width = snapped.width;
+      const height = snapped.height;
+
+      const ref = normalizeImageInput(body.image ?? body.referenceImage ?? null);
+      const result = await generateGptImage({
+        prompt: body.prompt,
+        width, height,
+        quantity: Math.min(Math.max(parseInt(body.quantity) || 1, 1), 4),
+        quality: ['LOW', 'MEDIUM', 'HIGH'].includes(String(body.quality).toUpperCase()) ? String(body.quality).toUpperCase() : 'LOW',
+        promptEnhance: ['OFF', 'AUTO', 'ON'].includes(String(body.promptEnhance).toUpperCase()) ? String(body.promptEnhance).toUpperCase() : 'AUTO',
+        model: body.model || undefined,
+        imageBase64: ref?.base64 || null,
+        mimeType: ref?.mimeType || 'image/jpeg',
+      });
+
+      return sendJson(res, 200, {
+        success: true,
+        mode: ref ? 'image-to-image' : 'text-to-image',
+        generationId: result.generationId,
+        account: result.account,
+        model: body.model || 'openai/gpt-image-2.5-sunburst',
+        width, height,
+        data: result.images.map((img) => ({ url: img.url, b64_json: null, mimeType: 'image/png', width: img.width, height: img.height })),
+      });
+    } catch (error) {
+      console.error('[GPT Image] Error:', error.message);
+      if (error instanceof ImageInputError) return sendJson(res, 400, { error: error.message });
+      if (error instanceof LeonardoError) return sendJson(res, error.status, { error: error.message });
+      return sendJson(res, 500, { error: error.message });
+    }
+  }
+
+  // ─── MENU VIDEO: Omni Video (Leonardo Hailuo 03) ─────────────────────
+  // POST /v1/videos/omni  — text-to-video & image-to-video
+  // Body: { prompt, ratio?('9:16'|'16:9'), resolution?('480p'|'768p'|'2k'|'4k'),
+  //         duration?(6|10), quality?('TURBO'|'STANDARD'|'ACCELERATED'), image? }
+  if (path === '/v1/videos/omni' && method === 'POST') {
+    try {
+      const body = await readBody(req);
+      if (!body.prompt) return sendJson(res, 400, { error: 'prompt is required' });
+
+      const ratio = ['9:16', '16:9'].includes(String(body.ratio)) ? String(body.ratio) : '9:16';
+      const resolution = LEO_VIDEO_RESOLUTIONS.includes(String(body.resolution)) ? String(body.resolution) : '768p';
+      const duration = LEO_VIDEO_DURATIONS.includes(Number(body.duration)) ? Number(body.duration) : 10;
+      const quality = LEO_VIDEO_QUALITIES.includes(String(body.quality).toUpperCase()) ? String(body.quality).toUpperCase() : 'TURBO';
+      const { width, height } = videoDimensions(ratio, resolution);
+
+      const ref = normalizeImageInput(body.image ?? body.referenceImage ?? null);
+      const result = await generateLeoVideo({
+        prompt: body.prompt,
+        ratio, resolution, duration, quality,
+        model: body.model || LEO_VIDEO_MODEL,
+        imageBase64: ref?.base64 || null,
+        mimeType: ref?.mimeType || 'image/jpeg',
+      });
+
+      return sendJson(res, 200, {
+        success: true,
+        mode: result.mode,
+        model: LEO_VIDEO_MODEL,
+        generationId: result.generationId,
+        account: result.account,
+        ratio, resolution, duration, quality, width, height,
+        cost: result.cost || null,
+        coerced: result.coerced || false,
+        note: result.note || null,
+        data: result.videos.map((v) => ({ url: v.url, mimeType: 'video/mp4', width: v.width, height: v.height })),
+      });
+    } catch (error) {
+      console.error('[Omni Video] Error:', error.message);
+      if (error instanceof ImageInputError) return sendJson(res, 400, { error: error.message });
+      if (error instanceof LeonardoError) {
+        // 403/401 dari Leonardo = akun kena penolakan sisi mereka (bukan salah user).
+        // withVideoSession sudah mencoba beberapa akun; kalau sampai ke sini semuanya kena.
+        // Jangan bocorkan pesan mentah "Access denied" — beri pesan yang bisa ditindaklanjuti.
+        if (error.status === 403 || error.status === 401) {
+          return sendJson(res, 503, { error: 'Maaf akun video sedang disiapkan, silakan coba lagi 2–5 menit.' });
+        }
+        return sendJson(res, error.status, { error: error.message });
+      }
+      return sendJson(res, 500, { error: error.message });
+    }
+  }
+
+  // GET /v1/images/gpt/accounts — status pool Leonardo (admin)
+  if (path === '/v1/images/gpt/accounts' && method === 'GET') {
+    if (!(await omniAdminAuth(req))) return sendJson(res, 401, { error: 'Admin access required' });
+    try {
+      const pool = await loadLeonardoPool({ force: true });
+      const fresh = await listFreshSessions();
+      const accounts = (pool.sessions || []).map((s) => ({
+        email: s.email || s.userSub,
+        tokens: s.tokens ?? null,
+        expiredInMin: Math.round(((Number(s.tokenExp) || 0) * 1000 - Date.now()) / 60000),
+        exhausted: Boolean(s.exhaustedAt),
+        fresh: fresh.some((f) => f.email === s.email),
+        lastUsedAt: s.lastUsedAt || null,
+      })).sort((a, b) => String(a.email).localeCompare(String(b.email)));
+      return sendJson(res, 200, { success: true, ...poolSummary(pool), accounts });
+    } catch (error) {
+      return sendJson(res, 503, { success: false, error: error.message });
     }
   }
 
@@ -627,44 +819,198 @@ const server = http.createServer(async (req, res) => {
     }
   }
 
-  // ─── Video generation (multi-akun, round-robin session) ─────
-  // POST /v1/videos/generations  { prompt, imageBase64?/imageUrl?/imageEntId?, aspectRatio?, resolution?(480p|720p), variations? }
-  if (path === '/v1/videos/generations' && method === 'POST') {
+  // ─── Kelola Akun Omni (admin: master key ATAU dashboard session) ─────
+  // Auth: (a) X-API-Key = OMNI_ADMIN_KEY/API_KEY, ATAU
+  //       (b) cookie dashboard_session dari login Gen Console (role admin)
+  async function omniAdminAuth(req) {
+    const testKey = (req.headers['authorization'] || '').replace(/^Bearer\s+/i, '') || req.headers['x-api-key'] || '';
+    // master key via lib/apikeys (API_KEY + OMNI_ADMIN_KEY)
+    if (testKey && validateKey(testKey)) return true;
+    // Dashboard session dari login Gen Console (role admin)
     try {
-      const body = await readBody(req);
-      const result = await generateVibesVideo(body);
-      return sendJson(res, 200, result);
-    } catch (error) {
-      console.error('[Vibes] generations error:', error.message, '| status:', error.status);
-      return sendJson(res, error.status && error.status >= 400 && error.status < 600 ? error.status : 500, { error: error.message });
-    }
-  }
-
-  // GET /v1/videos/batch/:id (atau /v1/videos/batch?batchId=) — poll status batch video
-  if ((path.startsWith('/v1/videos/batch/') || path === '/v1/videos/batch') && method === 'GET') {
-    try {
-      let batchId = decodeURIComponent(path.split('/')[4] || '');
-      if (!batchId) {
-        const q = new URL(req.url, 'http://localhost').searchParams;
-        batchId = q.get('batchId') || '';
+      const cookies = (req.headers.cookie || '').split(';').map(s => s.trim());
+      const sess = cookies.find(c => c.startsWith('dashboard_session='));
+      if (!sess) return false;
+      const token = sess.slice('dashboard_session='.length);
+      const stateDir = process.env.MCP_STATE_DIR || '/home/ubuntu/work/gemini-proxy/mcp-state';
+      const now = Date.now();
+      for (const file of ['admin-sessions.json', 'dashboard-sessions.json']) {
+        let sessions = null;
+        try {
+          sessions = JSON.parse(fs.readFileSync(stateDir + '/' + file, 'utf8'));
+        } catch { sessions = null; }
+        if (!Array.isArray(sessions)) continue;
+        const found = sessions.find(s => s.hash === crypto.createHash('sha256').update(token).digest('hex') && s.expiresAt > now);
+        if (found) {
+          if (file === 'admin-sessions.json') return true;
+          if (found.role === 'admin') return true;
+        }
       }
-      if (!batchId) return sendJson(res, 400, { error: 'batchId wajib' });
-      const batch = await pollVibesBatch(batchId);
-      return sendJson(res, 200, { success: true, batch });
-    } catch (error) {
-      console.error('[Vibes] batch poll error:', error.message);
-      return sendJson(res, error.status && error.status >= 400 && error.status < 600 ? error.status : 500, { error: error.message });
-    }
+    } catch {}
+    return false;
+  }
+  // GET  /api/omni-accounts          — list pool + stats
+  // POST /api/omni-accounts/activate — { label } set akun aktif ke Omni engine
+  // GET  /api/omni-accounts/active   — akun aktif sekarang
+  if (path === '/api/omni-accounts' && method === 'GET') {
+    if (!(await omniAdminAuth(req))) return sendJson(res, 401, { error: 'Admin access required' });
+    return sendJson(res, 200, { stats: omniStats(), accounts: omniListPool() });
   }
 
-  // GET /v1/videos/status — jumlah akun video aktif
-  if (path === '/v1/videos/status' && method === 'GET') {
+  if (path === '/api/omni-accounts/active' && method === 'GET') {
+    if (!(await omniAdminAuth(req))) return sendJson(res, 401, { error: 'Admin access required' });
+    return sendJson(res, 200, { active: omniGetActive() });
+  }
+
+  if (path === '/api/omni-accounts/audit' && method === 'GET') {
+    if (!(await omniAdminAuth(req))) return sendJson(res, 401, { error: 'Admin access required' });
     try {
-      const status = await getVibesStatus();
-      return sendJson(res, 200, { status: 'online', ...status, timestamp: Date.now() });
-    } catch (error) {
-      return sendJson(res, 500, { error: error.message });
+      if (!fs.existsSync('/tmp/omni-audit-state.json')) return sendJson(res, 200, { running: false, never: true, results: [] });
+      return sendJson(res, 200, JSON.parse(fs.readFileSync('/tmp/omni-audit-state.json', 'utf8')));
+    } catch (e) { return sendJson(res, 500, { error: String(e.message || e) }); }
+  }
+
+  if (path === '/api/omni-accounts/audit' && method === 'POST') {
+    if (!(await omniAdminAuth(req))) return sendJson(res, 401, { error: 'Admin access required' });
+    try {
+      if (fs.existsSync('/tmp/omni-audit-state.json')) {
+        const st = JSON.parse(fs.readFileSync('/tmp/omni-audit-state.json', 'utf8'));
+        if (st.running && Date.now() - (st.startedAt || 0) < 10 * 60 * 1000) {
+          return sendJson(res, 200, { success: true, alreadyRunning: true });
+        }
+      }
+      const child = spawn('python3', ['/home/ubuntu/omni-accounts/omni-audit.py'],
+        { detached: true, stdio: 'ignore', env: { ...process.env } });
+      child.unref();
+      return sendJson(res, 200, { success: true, pid: child.pid });
+    } catch (e) { return sendJson(res, 500, { error: String(e.message || e) }); }
+  }
+
+  // POST /api/omni-accounts/delete { labels:[...] } — hapus akun (pool+profil+daftar)
+  if (path === '/api/omni-accounts/delete' && method === 'POST') {
+    if (!(await omniAdminAuth(req))) return sendJson(res, 401, { error: 'Admin access required' });
+    const body = await readBody(req);
+    const labels = (Array.isArray(body.labels) ? body.labels : []).filter(l => typeof l === 'string' && /^[A-Za-z0-9_.-]+$/.test(l));
+    if (!labels.length) return sendJson(res, 400, { error: 'labels kosong / tidak valid' });
+    try {
+      const r = await new Promise((resolve) => {
+        const child = spawn('python3', ['/home/ubuntu/omni-accounts/omni-hapus.py', ...labels]);
+        let out = '', err = '';
+        child.stdout.on('data', d => out += d);
+        child.stderr.on('data', d => err += d);
+        child.on('close', () => resolve({ out, err }));
+      });
+      let detail = {};
+      try { detail = JSON.parse(r.out); } catch { detail = { raw: r.out.slice(0, 500), err: r.err.slice(0, 300) }; }
+      console.log('[omni-accounts/delete]', labels.length, 'akun →', JSON.stringify(detail).slice(0, 300));
+      return sendJson(res, 200, { success: true, ...detail });
+    } catch (e) { return sendJson(res, 500, { error: String(e.message || e) }); }
+  }
+
+  if (path === '/api/omni-accounts/activate' && method === 'POST') {
+    if (!(await omniAdminAuth(req))) return sendJson(res, 401, { error: 'Admin access required' });
+    const body = await readBody(req);
+    if (!body.label) return sendJson(res, 400, { error: 'label is required' });
+    const result = omniSetActive(body.label);
+    if (!result.ok) return sendJson(res, 400, { error: result.error });
+    console.log(`[Omni] Akun aktif diganti: ${result.label}`);
+    return sendJson(res, 200, { success: true, ...result });
+  }
+
+  if (path === '/api/omni-accounts/mode' && method === 'POST') {
+    if (!(await omniAdminAuth(req))) return sendJson(res, 401, { error: 'Admin access required' });
+    const body = await readBody(req);
+    const result = omniSetMode(body.mode);
+    if (!result.ok) return sendJson(res, 400, { error: result.error });
+    console.log(`[Omni] Mode pembagian pool diganti: ${result.mode}${result.first ? ' (akun pertama: ' + result.first + ')' : ''}`);
+    return sendJson(res, 200, { success: true, ...result });
+  }
+
+  if (path === '/api/omni-accounts/batch-status' && method === 'GET') {
+    if (!(await omniAdminAuth(req))) return sendJson(res, 401, { error: 'Admin access required' });
+    let running = false, okCount = 0, total = 0;
+    try {
+      total = omniTotal();
+      okCount = omniListPool().filter(a => a.ok).length;
+      const lockPath = '/tmp/omni-batch-122.lock';
+      let pidAlive = false;
+      if (fs.existsSync(lockPath)) {
+        try { process.kill(Number(fs.readFileSync(lockPath, 'utf8').trim()), 0); pidAlive = true; } catch {}
+      }
+      running = pidAlive;
+    } catch {}
+    return sendJson(res, 200, { running, okCount, total });
+  }
+
+  // ─── LOGIN OTOMATIS (form UI → capture batch) ─────────
+  // GET  /api/omni-autologin/status  — batch jalan? progress? log terakhir?
+  // POST /api/omni-autologin/start   — { accounts: "email1\\nemail2", password } → jalankan batch
+  // POST /api/omni-autologin/stop    — kill batch berjalan
+  if (path === '/api/omni-autologin/status' && method === 'GET') {
+    if (!(await omniAdminAuth(req))) return sendJson(res, 401, { error: 'Admin access required' });
+    let running = false, pid = null, total = 0, okCount = 0, failCount = 0, lastLines = [];
+    try {
+      const lockPath = '/tmp/omni-batch-auto.lock';
+      if (fs.existsSync(lockPath)) {
+        const p = Number(fs.readFileSync(lockPath, 'utf8').trim());
+        try { process.kill(p, 0); running = true; pid = p; } catch {}
+      }
+      const logPath = '/tmp/omni-autologin.log';
+      if (fs.existsSync(logPath)) {
+        const noise = /^\[pid|GFX1|Sandbox|JavaScript (warning|error)|^\s*⏳|^$/;
+        const lines = fs.readFileSync(logPath, 'utf8').split('\n').filter(Boolean);
+        lastLines = lines.filter(l => !noise.test(l)).slice(-60);
+        const cur = lines.filter(l => l.startsWith('########'));
+        total = cur.length || Number(fs.readFileSync('/home/ubuntu/omni-accounts/accounts-auto.txt', 'utf8').split('\n').filter(l => l.includes('@')).length);
+        okCount = lines.filter(l => l.startsWith('OK ')).length;
+        failCount = lines.filter(l => l.startsWith('FAIL ')).length;
+      }
+    } catch {}
+    return sendJson(res, 200, { running, pid, total, okCount, failCount, log: lastLines });
+  }
+
+  if (path === '/api/omni-autologin/start' && method === 'POST') {
+    if (!(await omniAdminAuth(req))) return sendJson(res, 401, { error: 'Admin access required' });
+    const body = await readBody(req);
+    const accounts = String(body.accounts || '').split(/\n+/).map(s => s.trim()).filter(s => s.includes('@'));
+    const password = String(body.password || '');
+    if (!accounts.length) return sendJson(res, 400, { error: 'Daftar email kosong' });
+    if (!password) return sendJson(res, 400, { error: 'Password wajib diisi' });
+    const bad = accounts.filter(a => !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(a));
+    if (bad.length) return sendJson(res, 400, { error: 'Format email tidak valid: ' + bad.slice(0, 3).join(', ') });
+    // cegah duplikat jalan
+    if (fs.existsSync('/tmp/omni-batch-auto.lock')) {
+      try { process.kill(Number(fs.readFileSync('/tmp/omni-batch-auto.lock', 'utf8').trim()), 0);
+        return sendJson(res, 409, { error: 'Batch login otomatis sudah berjalan' }); } catch {}
     }
+    fs.writeFileSync('/home/ubuntu/omni-accounts/accounts-auto.txt', accounts.join('\n') + '\n', { mode: 0o600 });
+    fs.writeFileSync('/home/ubuntu/omni-accounts/.auto_pw', password, { mode: 0o600 });
+    const child = spawn('bash', ['batch-omni-auto.sh'], {
+      cwd: '/home/ubuntu/omni-accounts',
+      env: { ...process.env, ACCT_FILE: '/home/ubuntu/omni-accounts/accounts-auto.txt', LOGIN_PASSWORD: password },
+      detached: true, stdio: ['ignore', 'ignore', 'ignore'],
+    });
+    child.unref();
+    console.log(`[Omni] Login otomatis dimulai: ${accounts.length} akun (pid ${child.pid})`);
+    return sendJson(res, 200, { success: true, count: accounts.length, pid: child.pid });
+  }
+
+  if (path === '/api/omni-autologin/stop' && method === 'POST') {
+    if (!(await omniAdminAuth(req))) return sendJson(res, 401, { error: 'Admin access required' });
+    const lockPath = '/tmp/omni-batch-auto.lock';
+    let stopped = false;
+    if (fs.existsSync(lockPath)) {
+      try {
+        const pid = Number(fs.readFileSync(lockPath, 'utf8').trim());
+        try { process.kill(-pid, 'SIGTERM'); } catch {}
+        try { process.kill(pid, 'SIGTERM'); } catch {}
+        stopped = true;
+        // matikan juga child capture yang mungkin jalan
+        try { spawn('pkill', ['-f', 'omni-token-capture.cjs'], { detached: true }).unref(); } catch {}
+      } catch {}
+      try { fs.unlinkSync(lockPath); } catch {}
+    }
+    return sendJson(res, 200, { success: stopped, message: stopped ? 'Batch dihentikan' : 'Tidak ada batch berjalan' });
   }
 
   // ─── 404 ────────────────────────────────────────────

@@ -16,6 +16,14 @@ import {GenClient} from './lib/gen-client.js';
 import {createTools} from './lib/tools.js';
 import {dispatch} from './lib/protocol.js';
 const MAX=12*1024*1024, ADMIN_MAX=64*1024;
+const OMNI_URL=process.env.OMNI_URL||'http://127.0.0.1:8795';
+// omniFetch — HTTP client untuk engine Omni Video (dipakai MCP tools generate_video/check_video/remove_watermark)
+const omniFetch=async(pathname,init={})=>{
+  const r=await fetch(OMNI_URL+pathname,{...init,signal:init.signal||AbortSignal.timeout(120000)});
+  const mime=(r.headers.get('content-type')||'').split(';')[0];
+  if(mime==='application/json')return{json:await r.json(),mime};
+  return{data:Buffer.from(await r.arrayBuffer()),mime:mime||'application/octet-stream'};
+};
 
 export async function createApp(o={}){
   const trustProxy=o.trustProxy===true||process.env.TRUST_PROXY==='true'||process.env.TRUST_PROXY==='1';
@@ -37,7 +45,7 @@ export async function createApp(o={}){
   let trialCleanupRunning=null;const trialCleanup=()=>trial&&!trialCleanupRunning?(trialCleanupRunning=trial.cleanup().catch(()=>{}).finally(()=>trialCleanupRunning=null)):trialCleanupRunning;await trialCleanup();const trialCleanupTimer=setInterval(trialCleanup,positive(o.trialCleanupIntervalMs,900000));trialCleanupTimer.unref();
   let billingCheckRunning=null;const billingCheck=()=>!billingCheckRunning?(billingCheckRunning=billing.checkPending().catch(()=>{}).finally(()=>billingCheckRunning=null)):billingCheckRunning;const billingCheckTimer=setInterval(billingCheck,positive(o.billingCheckIntervalMs??process.env.BILLING_CHECK_INTERVAL_MS,60000));billingCheckTimer.unref();
   const gen=new GenClient({baseUrl:o.genUrl||process.env.GEN_URL,apiKey:o.genKey||process.env.GEN_API_KEY});
-  const tools=createTools(gen,artifacts,{publicBaseUrl:o.publicBaseUrl||process.env.PUBLIC_BASE_URL||'',limits:o.limits});
+  const tools=createTools(gen,artifacts,{publicBaseUrl:o.publicBaseUrl||process.env.PUBLIC_BASE_URL||'',limits:o.limits,omni:omniFetch});
   const rate=new FixedWindow(now,{maxKeys:o.rateLimitMaxKeys||10000}),singleFlight=new SingleFlight(DEFAULT_WORKERS),adminRate=new FixedWindow(now,{maxKeys:10000}),trialAttemptRate=new FixedWindow(now,{maxKeys:positive(o.trialAttemptRateMaxKeys??process.env.TRIAL_ATTEMPT_RATE_MAX_KEYS,10000)}),bodyTimeoutMs=positive(o.bodyTimeoutMs??process.env.BODY_TIMEOUT_MS,10000);let closing=false;
   let mutationTail=Promise.resolve();const mutate=fn=>{const run=mutationTail.then(fn,fn);mutationTail=run.catch(()=>{});return run};
   const server=http.createServer(async(req,res)=>{security(res);try{
@@ -47,14 +55,22 @@ export async function createApp(o={}){
     if(req.method==='GET'&&url.pathname==='/billing/plan')return json(res,200,billing.plan());
     if(req.method==='POST'&&(url.pathname==='/auth/trial/request'||url.pathname==='/auth/trial/verify')){if(!trialConfigured)return json(res,503,{error:'Service unavailable'});const kind=url.pathname.endsWith('/verify')?'verify':'request',limit=Number(kind==='verify'?(o.trialVerifyAttemptLimit??process.env.TRIAL_VERIFY_ATTEMPT_LIMIT??20):(o.trialRequestAttemptLimit??process.env.TRIAL_REQUEST_ATTEMPT_LIMIT??10)),ipKey=trial.opaqueIpKey(req.clientIp),rl=trialAttemptRate.take(`${kind}:${ipKey}`,limit);if(!rl.ok){res.setHeader('retry-after',String(Math.ceil(rl.retryAfterMs/1000)));return json(res,429,{error:'Too many requests'})}}
     if(needsAdminBody(req.method,url.pathname)){const parsed=await readAdminJson(req,res,bodyTimeoutMs);if(!parsed.ok)return;req.parsedBody=parsed.value}
-    if(url.pathname==='/auth/trial/request')return await handleTrialRequest(req,res,{trial,mailer,trialConfigured,users,adminRate,now,o,mutate});
+    if((url.pathname==='/auth/trial/request'||url.pathname==='/auth/trial/verify'||url.pathname==='/billing/public/order')&&process.env.TRIAL_SALES_CLOSED==='1')return json(res,503,{error:'Pendaftaran trial dan pembelian paket sedang ditutup sementara. Silakan cek lagi nanti.'});
     if(url.pathname.startsWith('/auth/'))return await mutate(()=>handleAuth(req,res,url,{admin,dashboard,users,keys,trial,trialConfigured,adminRate,now,o,activationJournal}));
     if(url.pathname.startsWith('/profile'))return await mutate(()=>handleProfile(req,res,url,{dashboard,users,keys,adminRate,now,o}));
     if(url.pathname.startsWith('/billing/'))return await handleBilling(req,res,url,{billing,dashboard,users,adminRate,o});
     if(url.pathname.startsWith('/dashboard/'))return await handleDashboard(req,res,url,{dashboard,users,gen,usage,rate,singleFlight});
+    if(url.pathname.startsWith('/omni/'))return await handleOmniVideo(req,res,url,{dashboard,rate});
     if(url.pathname.startsWith('/admin/'))return await mutate(()=>handleAdmin(req,res,url,{admin,dashboard,users,keys,usage,adminRate,now,o}));
     const match=url.pathname.match(/^\/artifacts\/([a-f0-9]{32})$/);
-    if(req.method==='GET'&&match){const a=await artifacts.get(match[1]);if(!a){res.writeHead(404);return res.end()}res.writeHead(200,{'content-type':a.mime,'cache-control':'private, max-age=60','content-disposition':`attachment; filename="${match[1]}.${extension(a.mime)}"`});return res.end(a.data)}
+    if(req.method==='GET'&&match){const a=await artifacts.get(match[1]);if(!a){res.writeHead(404);return res.end()}
+      // Video/audio disajikan INLINE (bisa diputar langsung + dipakai <video src>),
+      // gambar tetap attachment. Nama file memakai ekstensi nyata dari MIME —
+      // sebelumnya video/mp4 jatuh ke 'bin' sehingga unduhan tersimpan sebagai .bin.
+      const ext=extension(a.mime),name=`${match[1]}.${ext}`;
+      const disposition=(a.mime.startsWith('video/')||a.mime.startsWith('audio/'))?'inline':'attachment';
+      res.writeHead(200,{'content-type':a.mime,'cache-control':'private, max-age=60','content-disposition':`${disposition}; filename="${name}"; filename*=UTF-8''${encodeURIComponent(name)}`,'access-control-allow-origin':'https://rupaai.azkazamdigital.com'});
+      return res.end(a.data)}
     if(req.method!=='POST'||url.pathname!=='/mcp'){res.writeHead(404);return res.end()}if(closing){res.writeHead(503);return res.end()}
     const token=bearer(req),record=token&&await keys.authenticate(token);if(!record)return unauthorized(res);
     let user=null;if(record.userId){user=users.get(record.userId);if(!user||!user.active||(user.expiresAt!==null&&Date.parse(user.expiresAt)<=now())||user.keyId!==record.id)return unauthorized(res)}
@@ -71,12 +87,12 @@ export async function createApp(o={}){
 
 const DASHBOARD_ROUTES=new Map([
   ['POST /dashboard/v1/images/generations','/v1/images/generations'],
+  ['POST /dashboard/v1/images/gpt','/v1/images/gpt'],
+  ['GET /dashboard/v1/images/gpt/accounts','/v1/images/gpt/accounts'],
+  ['POST /dashboard/v1/videos/omni','/v1/videos/omni'],
   ['POST /dashboard/v1/images/variations','/v1/images/variations'],
   ['POST /dashboard/v1/chat/completions','/v1/chat/completions'],
   ['POST /dashboard/v1/audio/speech','/v1/audio/speech'],
-  ['POST /dashboard/v1/videos/generations','/v1/videos/generations'],
-  ['GET /dashboard/v1/videos/batch','/v1/videos/batch'],
-  ['GET /dashboard/v1/videos/status','/v1/videos/status'],
   ['GET /dashboard/v1/tts/voices','/v1/tts/voices'],
   ['GET /dashboard/v1/status','/v1/status']
 ]);
@@ -87,7 +103,25 @@ async function handleDashboard(req,res,url,{dashboard,users,gen,usage,rate,singl
   const actor=session.role==='user'?`user:${session.user.id}`:'admin',user=session.role==='user'?users.get(session.user.id):null,rpm=user?(user.rpmLimit??DEFAULT_RPM):null,workers=normalizeWorkerLimit(user?.workerLimit);
   let release=null;if(req.method==='POST'&&session.role==='user'){const rl=rate.take(actor,rpm);res.setHeader('x-ratelimit-limit',String(rpm));res.setHeader('x-ratelimit-remaining',String(Math.max(0,rl.remaining??0)));if(!rl.ok){res.setHeader('retry-after',String(Math.ceil(rl.retryAfterMs/1000)));return json(res,429,{error:'rate limit',rpmLimit:rpm})}release=singleFlight.acquire(actor,workers);if(!release){res.setHeader('retry-after','1');return json(res,429,{error:`Maximum ${workers} active API requests are allowed per account`,workerLimit:workers})}}
   let value; if(req.method==='POST'){try{value=JSON.parse(await body(req,MAX))}catch{release?.();return json(res,400,{error:'Invalid request'})}}
-  try{const target=path+((req.method==='GET'&&url.search)?url.search:'');const timeoutMs=path.startsWith('/v1/videos')?300000:undefined;const result=await gen.request(target,{method:req.method,body:value,timeoutMs}),feature=dashboardFeature(path,value);if(feature)await usage.record(actor,feature).catch(()=>{});if(result.json!==undefined)return json(res,200,result.json);res.writeHead(200,{'content-type':result.mime});return res.end(result.data)}catch{return json(res,502,{error:'Backend unavailable'})}finally{release?.()}
+  try{const target=path+((req.method==='GET'&&url.search)?url.search:'');const isVideo=/videos\/omni/.test(path);const isGpt=/images\/gpt/.test(path);const timeoutMs=isVideo?900000:(isGpt?300000:60000);const result=await gen.request(target,{method:req.method,body:value,timeoutMs}),feature=dashboardFeature(path,value);if(feature)await usage.record(actor,feature).catch(()=>{});if(result.json!==undefined)return json(res,200,result.json);res.writeHead(200,{'content-type':result.mime});return res.end(result.data)}catch(e){const bt=/timeout/i.test(String(e?.message));const msg=bt?'Generate memakan waktu terlalu lama, coba lagi':(e?.fromBackend?String(e.message):'Backend unavailable');return json(res,bt||!e?.fromBackend?502:(Number(e.status)||502),{error:msg})}finally{release?.()}
+}
+
+async function handleOmniVideo(req,res,url,c){
+  const session=await c.dashboard.validate(sessionCookie(req));if(!session)return unauthorized(res);
+  if(session.entitlement==='profile-only')return json(res,403,{error:'Forbidden'});
+  const actor=session.role==='user'?`user:${session.user.id}`:'admin',user=session.role==='user'?users.get(session.user.id):null,rpm=user?(user.rpmLimit??DEFAULT_RPM):null;
+  if(req.method==='POST'&&session.role==='user'){const rl=c.rate.take(actor,rpm);if(!rl.ok){res.setHeader('retry-after',String(Math.ceil(rl.retryAfterMs/1000)));return json(res,429,{error:'rate limit',rpmLimit:rpm})}}
+  const target=OMNI_URL+url.pathname.replace(/^\/omni/,'')+url.search;
+  try{
+    const proxy=await fetch(target,{method:req.method,headers:{...(req.headers['content-type']?{'content-type':req.headers['content-type']}:{}),...(req.headers['range']?{'range':req.headers['range']}:{})},body:(req.method==='POST'||req.method==='PUT')?req:undefined,duplex:'half'});
+    const headers={'content-type':proxy.headers.get('content-type')||'application/octet-stream'};
+    const cl=proxy.headers.get('content-length');if(cl)headers['content-length']=cl;
+    const ar=proxy.headers.get('accept-ranges');if(ar)headers['accept-ranges']=ar;
+    const cr=proxy.headers.get('content-range');if(cr)headers['content-range']=cr;
+    res.writeHead(proxy.status,headers);
+    if(proxy.body)return proxy.body.pipeTo(new WritableStream({write:chunk=>new Promise(ok=>res.write(chunk,ok),er=>res.destroy(er))}));
+    return res.end();
+  }catch{return json(res,502,{error:'Layanan video tidak tersedia'})}
 }
 
 async function handleAuth(req,res,url,c){
@@ -204,8 +238,8 @@ export function clientIp(req,trustProxy=false){
 }
 function normalizeIp(value){if(typeof value!=='string')return null;const mapped=value.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/i);if(mapped&&net.isIP(mapped[1])===4)return mapped[1];return net.isIP(value)?value.toLowerCase():null}
 function isTrustedPeer(ip){const family=net.isIP(ip);if(family===4){const n=ip.split('.').map(Number);return n[0]===10||n[0]===127||n[0]===169&&n[1]===254||n[0]===172&&n[1]>=16&&n[1]<=31||n[0]===192&&n[1]===168}if(family===6)return ip==='::1'||ip.startsWith('fc')||ip.startsWith('fd')||/^fe[89ab]/.test(ip);return false}
-function mcpFeature(query){if(query?.method!=='tools/call')return null;return {generate_image:'imageGenerate',edit_image:'imageEdit',analyze_image:'vision',chat_text:'chat',generate_audio:'audio'}[query.params?.name]||null}
-function dashboardFeature(path,value){if(path==='/v1/images/generations')return'imageGenerate';if(path==='/v1/images/variations')return'imageEdit';if(path==='/v1/videos/generations')return'videoGenerate';if(path==='/v1/audio/speech')return'audio';if(path==='/v1/chat/completions')return value?.referenceImage||value?.image?'vision':'chat';return null}
+function mcpFeature(query){if(query?.method!=='tools/call')return null;return {generate_image:'imageGenerate',generate_gpt_image:'imageGenerate',edit_image:'imageEdit',analyze_image:'vision',chat_text:'chat',generate_audio:'audio'}[query.params?.name]||null}
+function dashboardFeature(path,value){if(path==='/v1/images/generations')return'imageGenerate';if(path==='/v1/images/gpt')return'imageGenerate';if(path==='/v1/images/variations')return'imageEdit';if(path==='/v1/audio/speech')return'audio';if(path==='/v1/chat/completions')return value?.referenceImage||value?.image?'vision':'chat';return null}
 function security(res){res.setHeader('x-content-type-options','nosniff');res.setHeader('referrer-policy','no-referrer');res.setHeader('x-frame-options','DENY');res.setHeader('content-security-policy',"default-src 'none'; frame-ancestors 'none'");res.setHeader('cache-control','no-store')}
-function extension(mime){return {'image/png':'png','image/jpeg':'jpg','image/webp':'webp','audio/mpeg':'mp3','audio/wav':'wav','audio/ogg':'ogg'}[mime]||'bin'}
+function extension(mime){return {'image/png':'png','image/jpeg':'jpg','image/webp':'webp','image/gif':'gif','video/mp4':'mp4','video/webm':'webm','video/quicktime':'mov','audio/mpeg':'mp3','audio/mp4':'m4a','audio/wav':'wav','audio/ogg':'ogg'}[mime]||'bin'}
 if(process.argv[1]===fileURLToPath(import.meta.url)){const app=await createApp(),port=Number(process.env.PORT||3101);app.server.listen(port,process.env.HOST||'127.0.0.1');const stop=async()=>{await app.close();process.exit(0)};process.on('SIGTERM',stop);process.on('SIGINT',stop)}

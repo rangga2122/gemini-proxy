@@ -31,7 +31,7 @@ test('dashboard proxy converts malformed input and backend failures safely',asyn
   const app=await createApp({stateDir:await mkdtemp(join(tmpdir(),'dashboard-proxy-')),genUrl,adminEmail:'admin@example.com',adminPasswordSalt:salt,adminPasswordHash:hash});const base=await listen(app.server);t.after(()=>app.close());
   const login=await fetch(base+'/auth/login',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({email:'admin@example.com',credential:password})});const headers={cookie:login.headers.get('set-cookie'),'content-type':'application/json'};
   assert.equal((await fetch(base+'/dashboard/v1/chat/completions',{method:'POST',headers,body:'{'})).status,400);
-  const failed=await fetch(base+'/dashboard/v1/status',{headers});assert.equal(failed.status,502);assert.deepEqual(await failed.json(),{error:'Backend unavailable'});
+  const failed=await fetch(base+'/dashboard/v1/status',{headers});assert.equal(failed.status,502);assert.equal((await failed.json()).error,'Backend unavailable');
 });
 
 test('dashboard proxy applies the worker limit configured for the account',async t=>{

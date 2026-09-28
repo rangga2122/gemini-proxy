@@ -1,0 +1,580 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Kelola Akun — Gen Console</title>
+<style>
+  :root { --bg:#0b1020; --card:#151b2e; --line:#253048; --txt:#e6eaf2; --mut:#8b96ad;
+    --green:#22c55e; --red:#ef4444; --amber:#f59e0b; --blue:#3b82f6; --purple:#a855f7; }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  body { background:var(--bg); color:var(--txt); font-family:ui-sans-serif,system-ui,'Segoe UI',Roboto,sans-serif; padding:20px; }
+  .wrap { max-width:1100px; margin:0 auto; }
+  h1 { font-size:20px; margin-bottom:4px; }
+  .sub { color:var(--mut); font-size:13px; margin-bottom:18px; }
+  .cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; margin-bottom:18px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:14px; }
+  .card .num { font-size:26px; font-weight:700; }
+  .card .lbl { color:var(--mut); font-size:12px; margin-top:2px; }
+  .c-green .num{color:var(--green)} .c-red .num{color:var(--red)} .c-amber .num{color:var(--amber)} .c-purple .num{color:var(--purple)}
+  .active-box { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:14px 16px; margin-bottom:18px; display:flex; align-items:center; gap:14px; flex-wrap:wrap; }
+  .active-box .who { font-size:15px; font-weight:700; }
+  .active-box .since { color:var(--mut); font-size:12px; }
+  .active-badge { background:var(--purple); color:#fff; border-radius:99px; padding:4px 12px; font-size:12px; font-weight:700; }
+  .toolbar { display:flex; gap:10px; align-items:center; margin-bottom:14px; flex-wrap:wrap; }
+  input[type=password], input[type=text], input[type=email] { background:#0a0f1c; border:1px solid var(--line); color:var(--txt); border-radius:8px; padding:9px 12px; font-size:14px; width:220px; }
+  button { background:var(--blue); color:#fff; border:0; border-radius:8px; padding:9px 16px; font-size:14px; font-weight:600; cursor:pointer; }
+  button.secondary { background:var(--card); border:1px solid var(--line); }
+  button:disabled { opacity:.5; cursor:not-allowed; }
+  .searchbox { flex:1; min-width:200px; }
+  table { width:100%; border-collapse:collapse; background:var(--card); border:1px solid var(--line); border-radius:12px; overflow:hidden; font-size:13px; }
+  th,td { padding:9px 12px; text-align:left; border-bottom:1px solid var(--line); }
+  th { color:var(--mut); font-weight:600; font-size:12px; text-transform:uppercase; letter-spacing:.04em; }
+  tr:last-child td { border-bottom:0; }
+  tr:hover td { background:#1a2238; }
+  .badge { display:inline-block; padding:2px 9px; border-radius:99px; font-size:11px; font-weight:700; }
+  .b-ok { background:#22c55e22; color:var(--green); }
+  .b-fail { background:#ef444422; color:var(--red); }
+  .b-pending { background:#f59e0b22; color:var(--amber); }
+  .b-active { background:#a855f733; color:var(--purple); }
+  .meta { font-size:12px; color:var(--mut); }
+  .err { color:var(--red); }
+  .toast { position:fixed; bottom:20px; right:20px; background:var(--card); border:1px solid var(--line); border-radius:10px; padding:12px 18px; font-size:14px; display:none; box-shadow:0 8px 30px #0008; }
+  .toast.ok { border-color:var(--green); } .toast.bad { border-color:var(--red); }
+  .warn { color:var(--amber); font-size:11px; }
+  .refreshing-note { color:var(--amber); font-size:13px; }
+  #loginBox { display:flex; flex-direction:column; gap:10px; max-width:360px; margin:0 auto 8px; }
+  #loginBox input { width:100%; }
+  #mainBox { display:none; }
+  .logout { margin-left:auto; }
+  /* Tabs */
+  .tabs { display:flex; gap:8px; margin-bottom:16px; border-bottom:1px solid var(--line); }
+  .tab { background:none; border:0; border-bottom:2px solid transparent; color:var(--mut); padding:10px 16px; font-size:14px; font-weight:600; cursor:pointer; }
+  .tab.active { color:var(--txt); border-bottom-color:var(--blue); }
+  .tabpane { display:none; }
+  .tabpane.active { display:block; }
+  /* Login Otomatis */
+  .auto-grid { display:grid; grid-template-columns:1fr 340px; gap:18px; align-items:start; }
+  @media (max-width:900px) { .auto-grid { grid-template-columns:1fr; } }
+  .auto-form { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:16px; display:flex; flex-direction:column; gap:12px; }
+  .auto-form label { font-size:12px; color:var(--mut); font-weight:600; text-transform:uppercase; letter-spacing:.04em; }
+  .auto-form textarea { background:#0a0f1c; border:1px solid var(--line); color:var(--txt); border-radius:8px; padding:10px 12px; font-size:13px; width:100%; min-height:150px; resize:vertical; font-family:ui-monospace,monospace; }
+  .auto-form input { width:100%; }
+  .auto-actions { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+  .btn-play { background:var(--green); }
+  .btn-stop { background:var(--red); }
+  .auto-info { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:16px; }
+  .auto-info h3 { font-size:14px; margin-bottom:10px; }
+  .info-row { display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px dashed var(--line); font-size:13px; }
+  .info-row:last-child { border-bottom:0; }
+  .info-row .v { font-weight:700; }
+  #logBox { background:#0a0f1c; border:1px solid var(--line); border-radius:10px; padding:12px; font-family:ui-monospace,'Cascadia Code',monospace; font-size:12px; line-height:1.55; max-height:340px; overflow-y:auto; white-space:pre-wrap; word-break:break-all; margin-top:12px; }
+  #logBox .l-ok { color:var(--green); }
+  #logBox .l-fail { color:var(--red); }
+  #logBox .l-head { color:var(--blue); font-weight:700; }
+  .prog-bar { height:8px; background:#0a0f1c; border:1px solid var(--line); border-radius:99px; overflow:hidden; margin:8px 0; }
+  .prog-fill { height:100%; background:linear-gradient(90deg,var(--blue),var(--purple)); width:0%; transition:width .5s; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>🎬 Kelola Akun — Omni Video</h1>
+  <div class="sub">Pool akun Google (gasmil.store / gusmall.com) untuk engine Omni Video di Gen Console — login &amp; capture otomatis via Camoufox di VPS, cookies bisa di-refresh kapan saja.<br>
+  <span class="warn">Aktivasi akun akan mengganti akun yang dipakai engine — satu akun aktif pada satu waktu.</span></div>
+
+  <!-- Login -->
+  <div id="loginBox">
+    <div class="card" style="padding:18px">
+      <div style="font-weight:700; margin-bottom:12px">🔐 Login Admin</div>
+      <input type="email" id="email" placeholder="Email admin…" autocomplete="username" onkeydown="if(event.key==='Enter')document.getElementById('pass').focus()">
+      <input type="password" id="pass" placeholder="Password…" autocomplete="current-password" onkeydown="if(event.key==='Enter')login()">
+      <button onclick="login()">Masuk</button>
+      <div class="meta" id="loginMsg"></div>
+    </div>
+  </div>
+
+  <!-- Main -->
+  <div id="mainBox">
+    <div class="tabs">
+      <button class="tab active" id="tabPoolBtn" onclick="switchTab('pool')">📋 Daftar Akun</button>
+      <button class="tab" id="tabAutoBtn" onclick="switchTab('auto')">⚡ Login Otomatis</button>
+      <button class="secondary logout" style="margin-left:auto;border:0" onclick="logout()">Keluar</button>
+    </div>
+
+    <!-- ═══ TAB 1: POOL AKUN (konten lama) ═══ -->
+    <div class="tabpane active" id="panePool">
+    <div class="cards">
+      <div class="card"><div class="num" id="stTotal">–</div><div class="lbl">Total Akun</div></div>
+      <div class="card c-green"><div class="num" id="stOk">–</div><div class="lbl">Auth Lengkap</div></div>
+      <div class="card c-red"><div class="num" id="stFail">–</div><div class="lbl">Gagal</div></div>
+      <div class="card c-amber"><div class="num" id="stPending">–</div><div class="lbl">Belum Diproses</div></div>
+      <div class="card c-red"><div class="num" id="stLimited">–</div><div class="lbl">Kena Limit</div></div>
+      <div class="card c-purple"><div class="num" id="stTotalGen">–</div><div class="lbl">Total Generate</div></div>
+    </div>
+
+    <div class="active-box">
+      <span class="active-badge" id="modeBadge">MODE AKUN</span>
+      <span class="who" id="actLabel">–</span>
+      <span class="since" id="actSince"></span>
+      <span class="meta" style="margin-left:auto" id="modeHint"></span>
+      <button class="secondary" id="modeBtn" onclick="toggleMode()">–</button>
+      <span class="meta" style="margin-left:8px">Omni Video · Gen Console</span>
+    </div>
+
+    <div class="toolbar">
+      <input type="text" class="searchbox" id="q" placeholder="Cari akun…" oninput="renderTable()">
+      <button class="secondary" id="btnAudit" onclick="startAudit()">🔍 Cek Akun Mati</button>
+      <button class="secondary" id="btnDelSel" onclick="hapusTerpilih()">🗑 Hapus Terpilih</button>
+      <button class="secondary" id="btnDelDead" style="display:none" onclick="hapusSemuaMati()">🗑 Hapus Semua Mati</button>
+      <span class="refreshing-note" id="batchNote"></span>
+      <span class="meta" id="auditNote"></span>
+      <span class="meta" id="updAt"></span>
+    </div>
+
+    <table>
+      <thead><tr><th style="width:28px"><input type="checkbox" id="chkAll" onclick="toggleAll(this)"></th><th>Email</th><th>Status</th><th>at</th><th>Cookies</th><th>Generate</th><th>Terakhir Generate</th><th>Di-capture</th><th></th></tr></thead>
+      <tbody id="tbody"></tbody>
+    </table>
+    </div><!-- /panePool -->
+
+    <!-- ═══ TAB 2: LOGIN OTOMATIS ═══ -->
+    <div class="tabpane" id="paneAuto">
+      <div class="auto-grid">
+        <div class="auto-form">
+          <div>
+            <label>📧 Daftar Akun Gmail (satu per baris)</label>
+            <textarea id="autoAccounts" placeholder="user1@gasmil.store&#10;user2@gasmil.store&#10;user3@gasmil.store" spellcheck="false"></textarea>
+            <div class="meta" style="margin-top:4px"><span id="autoCount">0</span> email terdeteksi</div>
+          </div>
+          <div>
+            <label>🔑 Password (satu untuk semua akun)</label>
+            <input type="password" id="autoPassword" placeholder="Password akun…" autocomplete="new-password">
+          </div>
+          <div class="auto-actions">
+            <button class="btn-play" id="btnPlay" onclick="autoStart()">▶ Play</button>
+            <button class="btn-stop" id="btnStop" onclick="autoStop()" style="display:none">⏹ Stop</button>
+            <span class="meta" id="autoHint">Antri 1-per-1 · lock global · resume-safe</span>
+          </div>
+        </div>
+        <div class="auto-info">
+          <h3>📊 Info Lengkap</h3>
+          <div class="info-row"><span>Status Batch</span><span class="v" id="aiStatus">–</span></div>
+          <div class="info-row"><span>Progres</span><span class="v" id="aiProgress">–</span></div>
+          <div class="prog-bar"><div class="prog-fill" id="aiBar"></div></div>
+          <div class="info-row"><span>✅ Sukses</span><span class="v" style="color:var(--green)" id="aiOk">0</span></div>
+          <div class="info-row"><span>❌ Gagal</span><span class="v" style="color:var(--red)" id="aiFail">0</span></div>
+          <div class="info-row"><span>📑 Total Akun</span><span class="v" id="aiTotal">0</span></div>
+          <div class="info-row"><span>🗂️ Isi Pool Sekarang</span><span class="v" id="aiPool">–</span></div>
+          <div class="info-row"><span>🆔 PID</span><span class="v" id="aiPid">–</span></div>
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;margin-top:16px">
+        <h3 style="font-size:14px">📜 Log</h3>
+        <button class="secondary" style="padding:4px 12px;font-size:12px" onclick="clearLogView()">Bersihkan Tampilan</button>
+        <span class="meta">real-time, update tiap 3 detik saat batch jalan</span>
+      </div>
+      <div id="logBox">Belum ada log. Tekan ▶ Play untuk mulai.</div>
+    </div><!-- /paneAuto -->
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+let DATA = null, LOGGED_IN = false;
+const esc = (s) => String(s ?? '').replace(/[&<>\\\"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','\\\"':'&quot;'}[c]));
+const fmtTime = (ts) => ts ? new Date(ts).toLocaleString('id-ID', {dateStyle:'medium', timeStyle:'short'}) : '–';
+
+function toast(msg, ok) {
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.className = 'toast ' + (ok ? 'ok' : 'bad');
+  t.style.display = 'block';
+  setTimeout(() => t.style.display = 'none', 3500);
+}
+
+async function login() {
+  const email = document.getElementById('email').value.trim();
+  const pass = document.getElementById('pass').value;
+  const msg = document.getElementById('loginMsg');
+  if (!email || !pass) { msg.textContent = 'Isi email & password'; msg.className = 'meta err'; return; }
+  msg.textContent = 'Memeriksa…'; msg.className = 'meta';
+  try {
+    const r = await fetch('/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
+      body: JSON.stringify({ email, credential: pass }),
+    });
+    if (r.ok) {
+      LOGGED_IN = true;
+      sessionStorage.setItem('omni_admin_logged', '1');
+      showMain();
+    } else {
+      msg.textContent = 'Email atau password salah';
+      msg.className = 'meta err';
+    }
+  } catch (e) { msg.textContent = 'Gagal: ' + e.message; msg.className = 'meta err'; }
+}
+
+async function logout() {
+  await fetch('/auth/logout', { method: 'POST', credentials: 'same-origin' }).catch(()=>{});
+  LOGGED_IN = false;
+  sessionStorage.removeItem('omni_admin_logged');
+  location.reload();
+}
+
+function showMain() {
+  document.getElementById('loginBox').style.display = 'none';
+  document.getElementById('mainBox').style.display = 'block';
+  load();
+}
+
+async function load() {
+  if (!LOGGED_IN) return;
+  try {
+    const r = await fetch('/api/omni-accounts', { credentials: 'same-origin' });
+    if (r.status === 401) { logout(); return; }
+    const d = await r.json();
+    DATA = d;
+    document.getElementById('stTotal').textContent = d.stats.total;
+    document.getElementById('stOk').textContent = d.stats.captured;
+    document.getElementById('stFail').textContent = d.stats.failed;
+    document.getElementById('stPending').textContent = d.stats.pending;
+    document.getElementById('stLimited').textContent = d.stats.limited ?? 0;
+    document.getElementById('stTotalGen').textContent = d.stats.totalGen ?? 0;
+    const a = d.stats.active;
+    const rr = d.stats.mode === 'round_robin';
+    const badge = document.getElementById('modeBadge');
+    badge.textContent = rr ? '🔄 ROUND ROBIN' : 'AKUN AKTIF ENGINE';
+    badge.style.background = rr ? 'var(--green, #10b981)' : '';
+    document.getElementById('actLabel').textContent = a ? a.email : 'Belum ada akun diaktifkan';
+    document.getElementById('actSince').textContent = a ? (rr ? 'generate berikutnya: akun lain (merata)' : 'sejak ' + fmtTime(a.ts)) : '';
+    document.getElementById('modeHint').textContent = rr
+      ? 'Semua generate dibagi merata otomatis ke seluruh akun sehat' + (d.stats.rrBlacklistCount ? ' · ' + d.stats.rrBlacklistCount + ' akun di-skip' : '')
+      : 'Satu akun aktif dipakai terus';
+    document.getElementById('modeBtn').textContent = rr ? 'Matikan RR' : 'Aktifkan RR';
+    document.getElementById('updAt').textContent = 'Update: ' + new Date().toLocaleTimeString('id-ID');
+    // batch status
+    fetch('/api/omni-accounts/batch-status', { credentials: 'same-origin' })
+      .then(r => r.json()).then(b => {
+        document.getElementById('batchNote').textContent = b.running
+          ? `⏳ Batch capture jalan (${b.okCount}/${b.total})…` : '';
+      }).catch(()=>{});
+    renderTable();
+    loadAudit();  // tampilkan hasil cek akun mati terakhir (kalau ada)
+  } catch (e) { toast('Gagal memuat: ' + e.message, false); }
+}
+
+// ─── Cek akun mati (audit live) + hapus ─────────────────────────────
+let AUDIT = null;        // state audit terakhir
+let SEL = new Set();     // label terpilih (checkbox)
+
+const AUDIT_LABEL = { ALIVE: 'hidup', DEAD: 'mati', 'HTTP 403': 'diblokir' };
+
+function auditBadge(live) {
+  if (live === 'ALIVE') return '<span class="badge b-ok">✅ hidup</span>';
+  if (live === 'DEAD') return '<span class="badge b-fail">💀 mati</span>';
+  return `<span class="badge b-fail">⚠ ${esc(live || '?')}</span>`;
+}
+
+function toggleAll(el) {
+  SEL.clear();
+  if (el.checked) {
+    const q = (document.getElementById('q').value || '').toLowerCase();
+    (DATA?.accounts || []).filter(a => a.email.toLowerCase().includes(q)).forEach(a => SEL.add(a.label));
+  }
+  renderTable();
+}
+
+function toggleSel(label) {
+  if (SEL.has(label)) SEL.delete(label); else SEL.add(label);
+  renderTable();
+}
+
+async function loadAudit() {
+  try {
+    const r = await fetch('/api/omni-accounts/audit', { credentials: 'same-origin' });
+    if (!r.ok) return;
+    const st = await r.json();
+    if (st.never) return;
+    AUDIT = st;
+    const note = document.getElementById('auditNote');
+    const btn = document.getElementById('btnAudit');
+    if (st.running) {
+      note.textContent = `🔍 Cek jalan… ${st.done}/${st.total}`;
+      btn.disabled = true; btn.textContent = '⏳ Mengecek…';
+      setTimeout(loadAudit, 2500);
+    } else {
+      const hasil = Object.fromEntries((st.results || []).map(x => [x.label, x]));
+      const dead = (st.results || []).filter(x => x.live !== 'ALIVE');
+      note.textContent = `Cek terakhir: ${st.alive ?? 0} hidup · ${dead.length} mati/gagal`;
+      btn.disabled = false; btn.textContent = '🔍 Cek Akun Mati';
+      document.getElementById('btnDelDead').style.display = dead.length ? '' : 'none';
+      // tandai baris mati + auto-pilih akun mati
+      window.AUDIT_BY_LABEL = hasil;
+      if (dead.length) { SEL = new Set(dead.map(x => x.label)); }
+      renderTable();
+    }
+  } catch { /* diam */ }
+}
+
+async function startAudit() {
+  const btn = document.getElementById('btnAudit');
+  btn.disabled = true; btn.textContent = '⏳ Memulai…';
+  try {
+    const r = await fetch('/api/omni-accounts/audit', { method: 'POST', credentials: 'same-origin' });
+    const d = await r.json();
+    if (!r.ok) { toast('Gagal: ' + (d.error || r.status), false); btn.disabled = false; btn.textContent = '🔍 Cek Akun Mati'; return; }
+    toast('🔍 Cek akun dimulai — cek cookie live satu per satu…', true);
+    setTimeout(loadAudit, 1500);
+  } catch (e) { toast('Gagal: ' + e.message, false); btn.disabled = false; btn.textContent = '🔍 Cek Akun Mati'; }
+}
+
+async function hapusSemuaMati() {
+  if (!AUDIT || AUDIT.running) { toast('Jalankan "Cek Akun Mati" dulu', false); return; }
+  const dead = (AUDIT.results || []).filter(x => x.live !== 'ALIVE').map(x => x.label);
+  if (!dead.length) { toast('Tidak ada akun mati', false); return; }
+  if (!confirm(`Hapus ${dead.length} akun yang MATI?\n\nSemua data (pool, profil browser, screenshot) dihapus. Akun yang sedang AKTIF di engine tidak akan dihapus.`)) return;
+  await doDelete(dead);
+}
+
+async function hapusTerpilih() {
+  const labels = [...SEL];
+  if (!labels.length) { toast('Pilih akun dulu (centang)', false); return; }
+  if (!confirm(`Hapus ${labels.length} akun terpilih? Akun yang sedang AKTIF di engine tidak akan dihapus.`)) return;
+  await doDelete(labels);
+}
+
+async function doDelete(labels) {
+  toast('⏳ Menghapus ' + labels.length + ' akun…', true);
+  try {
+    const r = await fetch('/api/omni-accounts/delete', {
+      method: 'POST', credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ labels }),
+    });
+    const d = await r.json();
+    if (!r.ok) { toast('Gagal: ' + (d.error || r.status), false); return; }
+    const skip = (d.skipped || []).length;
+    toast(`✅ ${d.deleted} akun dihapus` + (skip ? ` · ${skip} di-skip (aktif)` : '') + (d.GB ? ` · ${d.GB} GB dibebaskan` : ''), true);
+    SEL.clear();
+    const ca = document.getElementById('chkAll'); if (ca) ca.checked = false;
+    await load(); await loadAudit();
+  } catch (e) { toast('Gagal: ' + e.message, false); }
+}
+
+function renderTable() {
+  if (!DATA) return;
+  const q = (document.getElementById('q').value || '').toLowerCase();
+  const rows = DATA.accounts.filter(a => a.email.toLowerCase().includes(q));
+  const tb = document.getElementById('tbody');
+  const audit = window.AUDIT_BY_LABEL || {};
+  tb.innerHTML = rows.map(a => {
+    const active = DATA.stats.active && DATA.stats.active.label === a.label;
+    const au = audit[a.label];
+    let badge;
+    if (a.limited) badge = '<span class="badge b-fail" title="Limit bulanan — reset otomatis awal bulan depan">⛔ LIMIT BULANAN</span>';
+    else if (a.ok) badge = '<span class="badge b-ok">ok</span>';
+    else if (a.error) badge = '<span class="badge b-fail" title="' + esc(a.error) + '">gagal</span>';
+    else badge = '<span class="badge b-pending">menunggu</span>';
+    badge += au ? ' ' + auditBadge(au.live) : '';
+    const gen = a.genCount ? `<b>${a.genCount}</b> <span class="meta">(${a.genOk ?? 0}✓ ${a.genFail ?? 0}✗)</span>` : '<span class="meta">–</span>';
+    return `<tr${au && au.live !== 'ALIVE' ? ' style="background:rgba(239,68,68,.10)"' : ''}>
+      <td><input type="checkbox" ${SEL.has(a.label) ? 'checked' : ''} onclick="toggleSel('${esc(a.label)}')"></td>
+      <td>${esc(a.email)} ${active ? '<span class="badge b-active">AKTIF</span>' : ''}</td>
+      <td>${badge}${a.error && !a.limited ? ' <span class="warn" title="' + esc(a.error) + '">⚠</span>' : ''}</td>
+      <td>${a.at ? '✅' : '–'}</td>
+      <td>${a.cookieCount || '–'}</td>
+      <td>${gen}</td>
+      <td class="meta">${a.lastGenAt ? fmtTime(a.lastGenAt) : '–'}</td>
+      <td class="meta">${fmtTime(a.ts)}</td>
+      <td>${a.ok && !active && !a.limited ? `<button class="secondary" onclick="activate('${esc(a.label)}')">Aktifkan</button>` : ''}
+          ${!active ? `<button class="secondary" onclick="hapusSatu('${esc(a.label)}')" title="Hapus akun ini">🗑</button>` : ''}</td>
+    </tr>`;
+  }).join('') || '<tr><td colspan="9" class="meta">Tidak ada akun yang cocok.</td></tr>';
+}
+
+async function hapusSatu(label) {
+  if (!confirm('Hapus akun ' + label + '? (pool + profil + screenshot)')) return;
+  await doDelete([label]);
+}
+
+async function activate(label) {
+  if (DATA && DATA.stats.mode === 'round_robin') {
+    if (!confirm('Mode Round Robin sedang AKTIF — akun manual akan ditimpa otomatis di generate berikutnya. Tetap aktifkan manual?')) return;
+  } else if (!confirm('Aktifkan akun ini untuk engine Omni Video? Akun aktif akan diganti.')) return;
+  const r = await fetch('/api/omni-accounts/activate', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'same-origin',
+    body: JSON.stringify({ label }),
+  });
+  const d = await r.json();
+  if (d.success) { toast('✅ Akun aktif: ' + d.email, true); load(); }
+  else toast('Gagal: ' + (d.error || 'unknown'), false);
+}
+
+async function toggleMode() {
+  const rr = DATA && DATA.stats.mode === 'round_robin';
+  const target = rr ? 'manual' : 'round_robin';
+  if (!confirm(rr
+    ? 'Matikan Round Robin? Engine balik ke 1 akun aktif manual (yang terakhir dipakai).'
+    : 'Aktifkan Round Robin? Semua generate dibagi merata otomatis ke seluruh akun sehat pool.')) return;
+  const r = await fetch('/api/omni-accounts/mode', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'same-origin',
+    body: JSON.stringify({ mode: target }),
+  });
+  const d = await r.json();
+  if (d.success) {
+    toast(target === 'round_robin'
+      ? '🔄 Round Robin AKTIF — pembagian merata ke semua akun sehat' + (d.first ? ' (mulai: ' + d.first + ')' : '')
+      : 'Mode manual — 1 akun aktif', true);
+    load();
+  } else toast('Gagal: ' + (d.error || 'unknown'), false);
+}
+
+// Auto-login kalau masih punya session
+(async () => {
+  try {
+    const r = await fetch('/auth/session', { credentials: 'same-origin' });
+    if (r.ok) {
+      const d = await r.json();
+      if (d.authenticated && d.role === 'admin') { LOGGED_IN = true; showMain(); return; }
+    }
+  } catch {}
+  // fallback: cek penanda session lokal
+  if (sessionStorage.getItem('omni_admin_logged') === '1') {
+    try {
+      const r = await fetch('/api/omni-accounts', { credentials: 'same-origin' });
+      if (r.ok) { LOGGED_IN = true; showMain(); }
+    } catch {}
+  }
+})();
+
+// ═══ TABS ═══
+function switchTab(name) {
+  document.getElementById('panePool').classList.toggle('active', name === 'pool');
+  document.getElementById('paneAuto').classList.toggle('active', name === 'auto');
+  document.getElementById('tabPoolBtn').classList.toggle('active', name === 'pool');
+  document.getElementById('tabAutoBtn').classList.toggle('active', name === 'auto');
+  if (name === 'auto') pollAuto(); // refresh info saat tab dibuka
+}
+
+// ═══ LOGIN OTOMATIS ═══
+let autoTimer = null;
+
+const acctArea = document.getElementById('autoAccounts');
+if (acctArea) acctArea.addEventListener('input', () => {
+  const n = acctArea.value.split('\n').map(s => s.trim()).filter(s => s.includes('@')).length;
+  document.getElementById('autoCount').textContent = n;
+});
+
+function logLine(line) {
+  const box = document.getElementById('logBox');
+  if (!box) return;
+  const cls = line.startsWith('OK ') ? 'l-ok' : line.startsWith('FAIL ') ? 'l-fail'
+    : line.startsWith('########') ? 'l-head' : '';
+  const div = document.createElement('div');
+  if (cls) div.className = cls;
+  div.textContent = line;
+  box.appendChild(div);
+  box.scrollTop = box.scrollHeight;
+}
+
+function clearLogView() {
+  document.getElementById('logBox').innerHTML = '';
+}
+
+async function pollAuto() {
+  try {
+    const r = await fetch('/api/omni-autologin/status', { credentials: 'same-origin' });
+    if (!r.ok) return;
+    const d = await r.json();
+    // info lengkap
+    document.getElementById('aiStatus').textContent = d.running ? '⏳ BERJALAN' : (d.total ? '✔ SELESAI' : '–');
+    document.getElementById('aiStatus').style.color = d.running ? 'var(--amber)' : 'var(--mut)';
+    const done = d.okCount + d.failCount;
+    document.getElementById('aiProgress').textContent = d.total ? `${done}/${d.total}` : '–';
+    document.getElementById('aiBar').style.width = d.total ? Math.round(done / d.total * 100) + '%' : '0%';
+    document.getElementById('aiOk').textContent = d.okCount;
+    document.getElementById('aiFail').textContent = d.failCount;
+    document.getElementById('aiTotal').textContent = d.total;
+    document.getElementById('aiPid').textContent = d.pid || '–';
+    const poolOk = DATA ? DATA.stats.captured : '–';
+    document.getElementById('aiPool').textContent = poolOk + ' akun';
+    // tombol play/stop
+    document.getElementById('btnPlay').style.display = d.running ? 'none' : '';
+    document.getElementById('btnStop').style.display = d.running ? '' : 'none';
+    // log — render penuh (50 baris terakhir dari server)
+    if (d.log && d.log.length) {
+      const box = document.getElementById('logBox');
+      const cur = Array.from(box.children).map(c => c.textContent).join('\n');
+      const next = d.log.join('\n');
+      if (cur !== next) {
+        box.innerHTML = '';
+        d.log.forEach(logLine);
+        box.scrollTop = box.scrollHeight;
+      }
+    } else if (!d.running && d.total === 0) {
+      const box = document.getElementById('logBox');
+      if (!box.children.length) box.innerHTML = 'Belum ada log. Tekan ▶ Play untuk mulai.';
+    }
+    return d.running;
+  } catch { return false; }
+}
+
+async function autoStart() {
+  const accounts = document.getElementById('autoAccounts').value.split('\n').map(s => s.trim()).filter(s => s.includes('@'));
+  const password = document.getElementById('autoPassword').value;
+  if (!accounts.length) { toast('Isi daftar email dulu (satu per baris)', false); return; }
+  if (!password) { toast('Isi password dulu', false); return; }
+  if (!confirm(`Jalankan login otomatis untuk ${accounts.length} akun?\n\nAntri 1-per-1, ±1-2 menit per akun.`)) return;
+  const btn = document.getElementById('btnPlay');
+  btn.disabled = true; btn.textContent = '⏳ Memulai…';
+  try {
+    const r = await fetch('/api/omni-autologin/start', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
+      body: JSON.stringify({ accounts: accounts.join('\n'), password }),
+    });
+    const d = await r.json();
+    if (d.success) {
+      toast('▶ Batch mulai: ' + d.count + ' akun', true);
+      document.getElementById('autoPassword').value = '';
+      clearLogView();
+      pollAuto();
+      if (autoTimer) clearInterval(autoTimer);
+      autoTimer = setInterval(async () => {
+        const running = await pollAuto();
+        if (!running) { clearInterval(autoTimer); autoTimer = null; load(); }
+      }, 3000);
+    } else {
+      toast('Gagal: ' + (d.error || 'unknown'), false);
+    }
+  } catch (e) { toast('Gagal: ' + e.message, false); }
+  btn.disabled = false; btn.textContent = '▶ Play';
+}
+
+async function autoStop() {
+  if (!confirm('Stop batch yang sedang berjalan? Akun yang sudah sukses tetap tersimpan.')) return;
+  const r = await fetch('/api/omni-autologin/stop', {
+    method: 'POST', credentials: 'same-origin',
+  });
+  const d = await r.json();
+  toast(d.message || (d.success ? 'Dihentikan' : 'Tidak ada batch'), d.success);
+  if (autoTimer) { clearInterval(autoTimer); autoTimer = null; }
+  pollAuto();
+}
+
+// poll auto-login tiap 3 detik hanya saat tab auto aktif
+setInterval(() => {
+  if (LOGGED_IN && document.getElementById('paneAuto').classList.contains('active')) pollAuto();
+}, 3000);
+
+setInterval(() => { if (LOGGED_IN) load(); }, 30000);
+</script>
+</body>
+</html>

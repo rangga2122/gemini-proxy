@@ -24,3 +24,17 @@ Thumbs.db
 # Editor
 .vscode/
 .idea/
+
+# Backup berkas rahasia (token pool) — jangan pernah di-push
+*.backup-*
+token-pool.json.*
+api-keys.json.*
+.env.*.backup*
+
+# State runtime (dibuat otomatis oleh server)
+video-batch-accounts.json
+batch-*.json
+
+# Berkas cadangan
+*.bak
+*.bak-*

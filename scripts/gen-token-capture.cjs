@@ -9,7 +9,7 @@ const path = require('path');
 
 // ===== CONFIG =====
 const AUTOMATION_DIR = '/home/ubuntu/.9router/automation-runtime';
-const PROFILE_DIR = '/home/ubuntu/google-profiles/harmitafbads';
+const PROFILE_DIR = process.env.PROFILE_DIR || '/home/ubuntu/google-profiles/harmitafbads';
 const SCREENSHOT_DIR = '/home/ubuntu/google-profiles/screenshots';
 
 // Gen proxy endpoint
