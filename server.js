@@ -603,7 +603,10 @@ const server = http.createServer(async (req, res) => {
       const RATIOS = { '9:16': { w: 768, h: 1376 }, '16:9': { w: 1376, h: 768 } };
       const SIZES = { SMALL: 1, MEDIUM: 1.48, LARGE: 2.63 };
       const ar = RATIOS[body.ratio] || RATIOS['9:16'];
-      const scale = SIZES[String(body.size || 'SMALL').toUpperCase()] || 1;
+      // Bawaan MEDIUM/MEDIUM: 44 kredit per gambar → 1 akun free (150 kredit)
+      // dapat 3x generate. Atas permintaan Om, ukuran & kualitas tidak
+      // ditampilkan di UI; pemanggil API tetap boleh mengirim nilai lain.
+      const scale = SIZES[String(body.size || 'MEDIUM').toUpperCase()] || SIZES.MEDIUM;
       // Rumus skala menghasilkan angka mentah (2036x1137) yang DITOLAK Leonardo.
       // Selalu snap ke bank dimensi resmi supaya MEDIUM/LARGE tidak error.
       const snapped = snapSize({
@@ -618,7 +621,7 @@ const server = http.createServer(async (req, res) => {
         prompt: body.prompt,
         width, height,
         quantity: Math.min(Math.max(parseInt(body.quantity) || 1, 1), 4),
-        quality: ['LOW', 'MEDIUM', 'HIGH'].includes(String(body.quality).toUpperCase()) ? String(body.quality).toUpperCase() : 'LOW',
+        quality: ['LOW', 'MEDIUM', 'HIGH'].includes(String(body.quality).toUpperCase()) ? String(body.quality).toUpperCase() : 'MEDIUM',
         promptEnhance: ['OFF', 'AUTO', 'ON'].includes(String(body.promptEnhance).toUpperCase()) ? String(body.promptEnhance).toUpperCase() : 'AUTO',
         model: body.model || undefined,
         imageBase64: ref?.base64 || null,
