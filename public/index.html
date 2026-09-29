@@ -383,6 +383,24 @@ html{color-scheme:dark}[hidden]{display:none!important}body{background:var(--voi
           </select>
         </div>
       </div>
+      <div class="row">
+        <div class="field">
+          <label>Ukuran</label>
+          <select id="gptSize">
+            <option value="SMALL" selected>Small</option>
+            <option value="MEDIUM">Medium</option>
+            <option value="LARGE">Large</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Kualitas</label>
+          <select id="gptQuality">
+            <option value="LOW" selected>Low (cepat)</option>
+            <option value="MEDIUM">Medium</option>
+            <option value="HIGH">High</option>
+          </select>
+        </div>
+      </div>
       <button class="btn" id="btnGptImage" onclick="generateGptImage()">
         <span>Buat gambar GPT</span>
       </button>
@@ -1294,11 +1312,8 @@ async function generateGptImage() {
       prompt,
       model: document.getElementById('gptModel').value,
       ratio: document.getElementById('gptRatio').value,
-      // Ukuran & kualitas dikunci MEDIUM/MEDIUM dan sengaja TIDAK ditampilkan
-      // di UI. Sekali generate = 44 kredit, jadi 1 akun free (150 kredit)
-      // dapat 3x generate per hari.
-      size: 'MEDIUM',
-      quality: 'MEDIUM',
+      size: document.getElementById('gptSize').value,
+      quality: document.getElementById('gptQuality').value,
       quantity: 1,
     };
     if (gptMode === 'image') body.image = gptSourceImageData;
