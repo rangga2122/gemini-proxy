@@ -600,15 +600,44 @@ const server = http.createServer(async (req, res) => {
       const body = await readBody(req);
       if (!body.prompt) return sendJson(res, 400, { error: 'prompt is required' });
 
-      const RATIOS = { '9:16': { w: 768, h: 1376 }, '16:9': { w: 1376, h: 768 } };
-      const SIZES = { SMALL: 1, MEDIUM: 1.48, LARGE: 2.63 };
-      const ar = RATIOS[body.ratio] || RATIOS['9:16'];
-      const scale = SIZES[String(body.size || 'SMALL').toUpperCase()] || 1;
-      // Rumus skala menghasilkan angka mentah (2036x1137) yang DITOLAK Leonardo.
-      // Selalu snap ke bank dimensi resmi supaya MEDIUM/LARGE tidak error.
+      // ⚠️ Rasio di sini WAJIB sinkron dengan enum di mcp/lib/tools.js.
+      // Rasio yang tidak ada di daftar DIAM-DIAM jatuh ke 9:16 (baris bawah),
+      // jadi pengunjung bisa minta 4:5 tapi dapat 9:16 tanpa pesan galat.
+      //
+      // Dimensi ditulis EKSPLISIT per ukuran — JANGAN dikali rumus. Rumus
+      // skala menghasilkan angka mentah (2036x1137) yang ditolak Leonardo,
+      // dan setelah di-snap hasilnya bisa melenceng dari rasio yang diminta.
+      // Semua angka di bawah ini ada di bank dimensi resmi Leonardo
+      // (LEO_WIDTHS / LEO_HEIGHTS).
+      //
+      // ONGKOS (diukur 30 Sep'26, akun Leonardo FREE, kualitas MEDIUM):
+      //   768x1376  -> 20 kredit
+      //   1024x1280 -> 25 kredit
+      //   1536x1920 -> 56 kredit
+      // Saldo akun FREE = 150 kredit/gambar (subscriptionTokens).
+      // Bawaan MEDIUM (permintaan Om 30 Sep'26): ~2 gambar/akun, jadi pool
+      // 15 akun sehat ≈ 30 gambar sebelum rotasi perlu akun baru.
+      // ⚠️ 4:5 TIDAK boleh 768x960 — angka 960 tidak ada di bank dimensi
+      // Leonardo, dan snapSize akan menurunkannya ke 928 sehingga rasionya
+      // jadi 0,83 (bukan 0,8). Pasangan yang benar-benar tepat 4:5 dan sah:
+      // 1024x1280 (basis) dan 1536x1920 (medium).
+      const RASIO_DIM = {
+        '9:16': { SMALL: { w: 768, h: 1376 }, MEDIUM: { w: 1024, h: 1824 }, LARGE: { w: 1536, h: 1920 } },
+        '16:9': { SMALL: { w: 1376, h: 768 }, MEDIUM: { w: 1824, h: 1024 }, LARGE: { w: 1920, h: 1536 } },
+        '4:5':  { SMALL: { w: 1024, h: 1280 }, MEDIUM: { w: 1024, h: 1280 }, LARGE: { w: 1536, h: 1920 } },
+      };
+      const ar = RASIO_DIM[body.ratio] || RASIO_DIM['9:16'];
+      // Bawaan MEDIUM ukuran + MEDIUM kualitas (permintaan Om 30 Sep'26).
+      // Klien yang mengirim size/quality sendiri — termasuk Gen Console —
+      // TIDAK terpengaruh, karena nilai dari body selalu menang.
+      const ukuran = String(body.size || 'MEDIUM').toUpperCase();
+      const dim = ar[ukuran] || ar.SMALL;
+      // ⚠️ snapSize menerima {width, height} — bukan {w, h}. Salah nama kunci
+      // membuat dimensinya NaN dan SEMUA permintaan gagal di sisi Leonardo
+      // (ketahuan lewat uji 3 rasio 30 Sep'26).
       const snapped = snapSize({
-        width: body.width || Math.round(ar.w * scale),
-        height: body.height || Math.round(ar.h * scale),
+        width: body.width || dim.w,
+        height: body.height || dim.h,
       });
       const width = snapped.width;
       const height = snapped.height;
@@ -618,7 +647,7 @@ const server = http.createServer(async (req, res) => {
         prompt: body.prompt,
         width, height,
         quantity: Math.min(Math.max(parseInt(body.quantity) || 1, 1), 4),
-        quality: ['LOW', 'MEDIUM', 'HIGH'].includes(String(body.quality).toUpperCase()) ? String(body.quality).toUpperCase() : 'LOW',
+        quality: ['LOW', 'MEDIUM', 'HIGH'].includes(String(body.quality).toUpperCase()) ? String(body.quality).toUpperCase() : 'MEDIUM',
         promptEnhance: ['OFF', 'AUTO', 'ON'].includes(String(body.promptEnhance).toUpperCase()) ? String(body.promptEnhance).toUpperCase() : 'AUTO',
         model: body.model || undefined,
         imageBase64: ref?.base64 || null,
@@ -632,6 +661,8 @@ const server = http.createServer(async (req, res) => {
         account: result.account,
         model: body.model || 'openai/gpt-image-2.5-sunburst',
         width, height,
+        size: String(body.size || 'MEDIUM').toUpperCase(),
+        quality: ['LOW', 'MEDIUM', 'HIGH'].includes(String(body.quality).toUpperCase()) ? String(body.quality).toUpperCase() : 'MEDIUM',
         data: result.images.map((img) => ({ url: img.url, b64_json: null, mimeType: 'image/png', width: img.width, height: img.height })),
       });
     } catch (error) {

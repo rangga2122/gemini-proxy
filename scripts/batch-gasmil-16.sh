@@ -7,17 +7,11 @@ export MOZ_DISABLE_CONTENT_SANDBOX=1
 
 ACCOUNTS=(
   "LabibJovanMelawati"
-  "KaiJovanPramudya"
   "ZafranAbimanaNugraha"
   "FauziAqilaBaskoro"
-  "RafsanAdeliaRanadira"
   "VioletKaiAnggraini"
-  "ShakiraVioletPradana"
-  "FauziAfrizalHardiansyah"
-  "VioletElvinaMulyadi"
   "ElangAbizarAlamsyah"
   "HanifSyahdanSalsabila"
-  "NazwaVaroRajendra"
   "QonitaShaniaFirmanto"
 )
 
